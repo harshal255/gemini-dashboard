@@ -19,6 +19,7 @@ export default function ChatArea() {
     setIsLeftSidebarOpen,
     setIsRightSidebarOpen,
     handleSendMessage,
+    clearChat,
     activeModelDetails
   } = usePlayground();
 
@@ -298,6 +299,18 @@ export default function ChatArea() {
             <span className={`w-1.5 h-1.5 rounded-full ${models.length > 0 ? 'bg-success-accent' : 'bg-red-400'}`} />
             {models.length > 0 ? 'Connected' : 'Disconnected'}
           </div>
+
+          {/* Clear Chat Button */}
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={clearChat}
+              className="p-1.5 text-text-muted hover:text-red-400 rounded-md hover:bg-bg-card transition-all cursor-pointer"
+              title="Clear Chat History"
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
 
           {/* Theme Toggle Button */}
           <button

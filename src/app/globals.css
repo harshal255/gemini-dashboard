@@ -213,6 +213,8 @@ button, input, select, textarea {
   padding: 0 !important;
   font-size: inherit !important;
   border-radius: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .markdown-body code {

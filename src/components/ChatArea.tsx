@@ -580,15 +580,22 @@ export default function ChatArea() {
             </button>
             
             {/* TOON Hover Note Tooltip */}
-            <div className="absolute bottom-full left-1/2 -translate-x-[25px] mb-3 w-64 p-3.5 bg-bg-sidebar border border-border-sidebar rounded-xl shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-[100] text-left font-sans text-xs select-none">
+            <div className="absolute bottom-full left-1/2 -translate-x-[25px] mb-3 w-72 p-4 bg-bg-sidebar border border-border-sidebar rounded-xl shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-[100] text-left font-sans text-xs select-none">
               <div className="flex items-center gap-1.5 font-bold text-text-main mb-1.5 text-[10.5px] uppercase tracking-wider">
                 <Sparkles size={11} className="text-primary-accent animate-pulse" />
                 What is TOON Format?
               </div>
-              <p className="text-text-muted text-[10.5px] leading-relaxed">
-                TOON is an optimized schema serialization format. When enabled, it compresses complex JSON inputs and JSON file attachments to drastically reduce their footprint, saving up to <strong>30%–50%</strong> of your Gemini input tokens and reducing query costs.
+              <p className="text-text-muted text-[10.5px] leading-relaxed mb-2.5">
+                TOON is an optimized serialization format. It compresses complex JSON inputs and instructs Gemini to write responses in TOON, saving <strong>30%–50%</strong> of tokens. Note: Teaching the model TOON requires a static system instruction overhead of <strong>~97 tokens</strong>.
               </p>
-              <div className="mt-2.5 pt-2 border-t border-border-sidebar/40 flex items-center justify-between text-[9px]">
+
+              <div className="bg-bg-input/40 border border-border-input/30 rounded-lg p-2.5 mb-2.5 text-[10px] space-y-1 text-text-muted">
+                <div className="font-semibold text-text-main text-[10.5px] mb-0.5">💡 Usage Guide:</div>
+                <div>✔️ <strong className="text-primary-accent">ON:</strong> For structured JSON, nested files, table prompts, or list generation (where token savings far exceed the ~97 token system instructions overhead).</div>
+                <div>❌ <strong className="text-text-main">OFF:</strong> For simple plain text queries or short messages (avoids the extra ~97 instruction tokens).</div>
+              </div>
+
+              <div className="pt-2.5 border-t border-border-sidebar/40 flex items-center justify-between text-[9px]">
                 <span className="text-text-muted font-medium">Status: <span className={isToonEnabled ? 'text-success-accent font-bold' : 'text-text-muted/80'}>{isToonEnabled ? 'ACTIVE (ON)' : 'INACTIVE (OFF)'}</span></span>
                 <span className="text-primary-accent font-semibold">Saves Token Quotas</span>
               </div>

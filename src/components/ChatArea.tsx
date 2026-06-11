@@ -337,6 +337,26 @@ const convertCustomToonToStandard = (customToon: string): string => {
         try {
           const standardToon = convertCustomToonToStandard(toonContent.trim());
           const decoded = decode(standardToon);
+          
+          // If the decoded data is a flat list of objects, format it as a clean Markdown table!
+          if (Array.isArray(decoded) && decoded.length > 0 && typeof decoded[0] === 'object' && decoded[0] !== null) {
+            const keys = Object.keys(decoded[0]);
+            const isFlat = decoded.every(item => 
+              typeof item === 'object' && 
+              item !== null && 
+              Object.values(item).every(val => typeof val !== 'object' || val === null)
+            );
+            
+            if (isFlat) {
+              const headerLine = `| ${keys.join(' | ')} |`;
+              const separatorLine = `| ${keys.map(() => '---').join(' | ')} |`;
+              const dataLines = decoded.map(row => {
+                return `| ${keys.map(k => String(row[k] ?? '').replace(/\|/g, '\\|')).join(' | ')} |`;
+              });
+              return `\n${[headerLine, separatorLine, ...dataLines].join('\n')}\n`;
+            }
+          }
+          
           const prettyJson = JSON.stringify(decoded, null, 2);
           return `\`\`\`json\n// Decoded from TOON (Optimized Output)\n${prettyJson}\n\`\`\``;
         } catch (err) {

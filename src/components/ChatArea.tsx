@@ -249,7 +249,7 @@ export default function ChatArea() {
 
     // Decode TOON blocks inside model responses
     if (role === 'model') {
-      const toonRegex = /```toon\s*([\s\S]*?)```/g;
+      const toonRegex = /```(?:[a-zA-Z0-9_-]+)?\s*(#schema[\s\S]*?)```/g;
       processedText = text.replace(toonRegex, (match, toonContent) => {
         try {
           const decoded = decode(toonContent.trim());

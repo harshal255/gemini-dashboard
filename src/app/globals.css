@@ -202,11 +202,17 @@ button, input, select, textarea {
   border-radius: 8px;
   padding: 0.85rem;
   margin: 0.75rem 0;
-  overflow-x: hidden;
+  overflow: hidden !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--font-mono);
   font-size: 12px;
+}
+
+.markdown-body pre::-webkit-scrollbar {
+  display: none !important;
 }
 
 .markdown-body pre code {
@@ -235,5 +241,14 @@ button, input, select, textarea {
   background: rgba(255, 255, 255, 0.15);
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #ffffff;
+}
+
+/* Custom scrollbar hiding for textareas */
+textarea {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+textarea::-webkit-scrollbar {
+  display: none !important;
 }
 

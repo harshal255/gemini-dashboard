@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Send, Image as ImageIcon, FileText, Loader2, Sparkles, Trash2, Menu, Info, Sun, Moon, ChevronDown
+  Send, Image as ImageIcon, FileText, Loader2, Sparkles, Trash2, Menu, Info, Sun, Moon, ChevronDown, Square
 } from 'lucide-react';
 import { marked } from 'marked';
 import { usePlayground, Attachment } from '../context/PlaygroundContext';
@@ -20,6 +20,7 @@ export default function ChatArea() {
     setIsRightSidebarOpen,
     handleSendMessage,
     clearChat,
+    stopGeneration,
     isToonEnabled,
     setIsToonEnabled,
     activeModelDetails
@@ -543,13 +544,24 @@ export default function ChatArea() {
             className="flex-1 bg-transparent border-none outline-none resize-none text-[13px] text-text-main py-1 max-h-24 h-6 font-sans placeholder-gray-600 no-scrollbar min-w-0"
           />
 
-          <button
-            type="submit"
-            className="p-2 bg-primary-accent text-white rounded-lg hover:bg-primary-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0 cursor-pointer"
-            disabled={isSending || (!inputText.trim() && attachments.length === 0)}
-          >
-            <Send size={12} />
-          </button>
+          {isSending ? (
+            <button
+              type="button"
+              onClick={stopGeneration}
+              className="p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-all shrink-0 cursor-pointer flex items-center justify-center animate-pulse"
+              title="Stop Generation"
+            >
+              <Square size={12} fill="white" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className="p-2 bg-primary-accent text-white rounded-lg hover:bg-primary-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0 cursor-pointer"
+              disabled={!inputText.trim() && attachments.length === 0}
+            >
+              <Send size={12} />
+            </button>
+          )}
         </form>
       </div>
       {/* Full-screen Image Preview Modal */}

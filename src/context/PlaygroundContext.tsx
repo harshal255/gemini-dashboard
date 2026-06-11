@@ -153,6 +153,7 @@ interface PlaygroundContextProps {
   fetchModels: (keyToUse?: string | object) => Promise<void>;
   handleSendMessage: (text: string, files: Attachment[]) => Promise<void>;
   clearChat: () => void;
+  stopGeneration: () => void;
   activeModelDetails: {
     name: string;
     version: string;
@@ -190,6 +191,7 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
 
   const [isToonEnabled, setIsToonEnabled] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const isInitial = useRef(true);
   const loadedRef = useRef(false);
@@ -300,6 +302,14 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
     if (!loadedRef.current) return;
     saveMessagesToDB(messages);
   }, [messages]);
+
+  const stopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsSending(false);
+  };
 
   const clearChat = () => {
     setMessages([]);
@@ -469,10 +479,14 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${apiKey}`;
 
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: requestContents })
+        body: JSON.stringify({ contents: requestContents }),
+        signal: controller.signal
       });
 
       const duration = performance.now() - startTime;
@@ -562,6 +576,16 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
       }
       setRequestCount(prev => prev + 1);
     } catch (err: any) {
+      if (err.name === 'AbortError') {
+        const cancelledMessage: ChatMessage = {
+          id: Math.random().toString(36).substring(2, 9),
+          role: 'model',
+          text: `🛑 Generation stopped by user.`,
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, cancelledMessage]);
+        return;
+      }
       console.warn('Chat request error:', err);
       const durationSeconds = (performance.now() - startTime) / 1000;
       setLatency(durationSeconds);
@@ -575,6 +599,7 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
       };
       setMessages(prev => [...prev, errorMessage]);
     } finally {
+      abortControllerRef.current = null;
       setIsSending(false);
     }
   };
@@ -618,6 +643,7 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
         fetchModels,
         handleSendMessage,
         clearChat,
+        stopGeneration,
         activeModelDetails
       }}
     >

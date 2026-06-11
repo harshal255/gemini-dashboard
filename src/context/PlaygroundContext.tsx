@@ -20,6 +20,7 @@ export interface ChatMessage {
   latency?: number;
   tokens?: { prompt: number; candidates: number; total: number };
   cost?: { usd: string; inr: string };
+  isToonEnabled?: boolean;
 }
 
 export interface ModelInfo {
@@ -392,7 +393,8 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
       role: 'user',
       text: finalInputText,
       attachments: currentAttachments,
-      timestamp: new Date()
+      timestamp: new Date(),
+      isToonEnabled: isToonEnabled
     };
 
     setMessages(prev => [...prev, newUserMessage]);
@@ -552,6 +554,7 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
           text: textResponse,
           timestamp: new Date(),
           latency: durationSeconds,
+          isToonEnabled: isToonEnabled,
           tokens: {
             prompt: 0,
             candidates: candidateTokens,
@@ -590,7 +593,8 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
           role: 'model',
           text: textResponse,
           timestamp: new Date(),
-          latency: durationSeconds
+          latency: durationSeconds,
+          isToonEnabled: isToonEnabled
         };
         setMessages(prev => [...prev, newModelMessage]);
       }

@@ -395,12 +395,17 @@ export default function ChatArea() {
               {/* User message token details (Prompt info) & Copy option */}
               {msg.role === 'user' && (
                 <div className="text-[9px] text-white/70 flex items-center justify-between mt-2.5 pt-1.5 border-t border-white/20 font-mono gap-4 animate-in fade-in slide-in-from-bottom-1 duration-200">
-                  <span className="truncate">
-                    {msg.tokens && msg.tokens.prompt > 0 
-                      ? `Input: ${msg.tokens.prompt.toLocaleString()} tokens` 
-                      : 'Prompt Input'
-                    }
-                    {msg.cost && ` | $${msg.cost.usd} (₹${msg.cost.inr})`}
+                  <span className="truncate flex items-center gap-1.5">
+                    <span>
+                      {msg.tokens && msg.tokens.prompt > 0 
+                        ? `Input: ${msg.tokens.prompt.toLocaleString()} tokens` 
+                        : 'Prompt Input'
+                      }
+                      {msg.cost && ` | $${msg.cost.usd} (₹${msg.cost.inr})`}
+                    </span>
+                    {msg.isToonEnabled && (
+                      <span className="bg-white/25 text-white px-1 py-0.2 rounded text-[7.5px] font-bold tracking-wide uppercase select-none">TOON</span>
+                    )}
                   </span>
                   <CopyButton text={msg.text} isUser />
                 </div>
@@ -414,11 +419,16 @@ export default function ChatArea() {
                       {msg.latency !== undefined && `took ${msg.latency.toFixed(2)}s`}
                     </span>
                     {msg.tokens && (
-                      <span>
-                        | {msg.tokens.prompt > 0 
-                          ? `P: ${msg.tokens.prompt.toLocaleString()} | R: ${msg.tokens.candidates.toLocaleString()}`
-                          : `Output: ${msg.tokens.candidates.toLocaleString()}`
-                        } tokens
+                      <span className="flex items-center gap-1">
+                        <span>
+                          | {msg.tokens.prompt > 0 
+                            ? `P: ${msg.tokens.prompt.toLocaleString()} | R: ${msg.tokens.candidates.toLocaleString()}`
+                            : `Output: ${msg.tokens.candidates.toLocaleString()}`
+                          } tokens
+                        </span>
+                        {msg.isToonEnabled && (
+                          <span className="ml-1 bg-primary-accent/15 border border-primary-accent/25 text-primary-accent px-1.5 py-0.2 rounded text-[7.5px] font-bold tracking-wide uppercase select-none">TOON Input</span>
+                        )}
                       </span>
                     )}
                     {msg.cost && (

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import { encode } from '@toon-format/toon';
 
 export interface Attachment {
   name: string;
@@ -145,6 +146,9 @@ interface PlaygroundContextProps {
   isRightSidebarOpen: boolean;
   setIsRightSidebarOpen: (open: boolean) => void;
 
+  isToonEnabled: boolean;
+  setIsToonEnabled: (enabled: boolean) => void;
+
   // Actions & Helpers
   fetchModels: (keyToUse?: string | object) => Promise<void>;
   handleSendMessage: (text: string, files: Attachment[]) => Promise<void>;
@@ -184,6 +188,8 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
   // Mobile responsiveness drawer states
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(false);
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
+
+  const [isToonEnabled, setIsToonEnabled] = useState(false);
 
   const isInitial = useRef(true);
   const loadedRef = useRef(false);
@@ -377,14 +383,38 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
       const parts: any[] = [];
 
       if (currentInput.trim()) {
-        parts.push({ text: currentInput });
+        if (isToonEnabled) {
+          try {
+            const parsed = JSON.parse(currentInput.trim());
+            const toonEncoded = encode(parsed);
+            parts.push({ text: toonEncoded });
+          } catch (_) {
+            parts.push({ text: currentInput });
+          }
+        } else {
+          parts.push({ text: currentInput });
+        }
       }
 
       currentAttachments.forEach(att => {
         if (att.textContent) {
-          parts.push({
-            text: `[File Attachment: ${att.name}]\n\`\`\`\n${att.textContent}\n\`\`\`\n`
-          });
+          if (att.name.endsWith('.json') && isToonEnabled) {
+            try {
+              const parsed = JSON.parse(att.textContent);
+              const toonEncoded = encode(parsed);
+              parts.push({
+                text: `[File Attachment: ${att.name} (TOON Encoded)]\n\`\`\`toon\n${toonEncoded}\n\`\`\`\n`
+              });
+            } catch (_) {
+              parts.push({
+                text: `[File Attachment: ${att.name}]\n\`\`\`\n${att.textContent}\n\`\`\`\n`
+              });
+            }
+          } else {
+            parts.push({
+              text: `[File Attachment: ${att.name}]\n\`\`\`\n${att.textContent}\n\`\`\`\n`
+            });
+          }
         }
       });
 
@@ -458,15 +488,12 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
       const data = await response.json();
       const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
-      let messageTokens: { prompt: number; candidates: number; total: number } | undefined;
-      let messageCost: { usd: string; inr: string } | undefined;
-
       if (data.usageMetadata) {
         const promptTokens = data.usageMetadata.promptTokenCount || 0;
         const candidateTokens = data.usageMetadata.candidatesTokenCount || 0;
         const totalTokens = data.usageMetadata.totalTokenCount || 0;
 
-        messageTokens = {
+        const totalUsage = {
           prompt: promptTokens,
           candidates: candidateTokens,
           total: totalTokens
@@ -475,29 +502,64 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
         const isPro = activeModel.includes('pro');
         const inputRate = isPro ? (1.25 / 1000000) : (0.075 / 1000000);
         const outputRate = isPro ? (5.00 / 1000000) : (0.30 / 1000000);
-        const costUSD = (promptTokens * inputRate) + (candidateTokens * outputRate);
-        const costINR = costUSD * 95.4;
 
-        messageCost = {
-          usd: costUSD.toFixed(6),
-          inr: costINR.toFixed(4)
+        const promptCostUSD = promptTokens * inputRate;
+        const promptCostINR = promptCostUSD * 95.4;
+
+        const candidateCostUSD = candidateTokens * outputRate;
+        const candidateCostINR = candidateCostUSD * 95.4;
+
+        setTokenUsage(totalUsage);
+        localStorage.setItem('gemini_tester_last_token_usage', JSON.stringify(totalUsage));
+
+        const newModelMessage: ChatMessage = {
+          id: Math.random().toString(36).substring(2, 9),
+          role: 'model',
+          text: textResponse,
+          timestamp: new Date(),
+          latency: durationSeconds,
+          tokens: {
+            prompt: 0,
+            candidates: candidateTokens,
+            total: candidateTokens
+          },
+          cost: {
+            usd: candidateCostUSD.toFixed(6),
+            inr: candidateCostINR.toFixed(4)
+          }
         };
 
-        setTokenUsage(messageTokens);
-        localStorage.setItem('gemini_tester_last_token_usage', JSON.stringify(messageTokens));
+        setMessages(prev => {
+          const updated = [...prev];
+          for (let i = updated.length - 1; i >= 0; i--) {
+            if (updated[i].role === 'user') {
+              updated[i] = {
+                ...updated[i],
+                tokens: {
+                  prompt: promptTokens,
+                  candidates: 0,
+                  total: promptTokens
+                },
+                cost: {
+                  usd: promptCostUSD.toFixed(6),
+                  inr: promptCostINR.toFixed(4)
+                }
+              };
+              break;
+            }
+          }
+          return [...updated, newModelMessage];
+        });
+      } else {
+        const newModelMessage: ChatMessage = {
+          id: Math.random().toString(36).substring(2, 9),
+          role: 'model',
+          text: textResponse,
+          timestamp: new Date(),
+          latency: durationSeconds
+        };
+        setMessages(prev => [...prev, newModelMessage]);
       }
-
-      const newModelMessage: ChatMessage = {
-        id: Math.random().toString(36).substring(2, 9),
-        role: 'model',
-        text: textResponse,
-        timestamp: new Date(),
-        latency: durationSeconds,
-        tokens: messageTokens,
-        cost: messageCost
-      };
-
-      setMessages(prev => [...prev, newModelMessage]);
       setRequestCount(prev => prev + 1);
     } catch (err: any) {
       console.warn('Chat request error:', err);
@@ -550,6 +612,8 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
         setIsLeftSidebarOpen,
         isRightSidebarOpen,
         setIsRightSidebarOpen,
+        isToonEnabled,
+        setIsToonEnabled,
 
         fetchModels,
         handleSendMessage,

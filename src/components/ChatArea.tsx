@@ -20,6 +20,8 @@ export default function ChatArea() {
     setIsRightSidebarOpen,
     handleSendMessage,
     clearChat,
+    isToonEnabled,
+    setIsToonEnabled,
     activeModelDetails
   } = usePlayground();
 
@@ -353,6 +355,21 @@ export default function ChatArea() {
             >
               <div>{parseMessageText(msg.text, msg.role)}</div>
 
+              {/* User message token details (Prompt info) */}
+              {msg.role === 'user' && msg.tokens && msg.tokens.prompt > 0 && (
+                <div className="text-[9px] text-white/70 flex items-center justify-between mt-2.5 pt-1.5 border-t border-white/20 font-mono gap-4 animate-in fade-in slide-in-from-bottom-1 duration-200">
+                  <span>
+                    Input: {msg.tokens.prompt.toLocaleString()} tokens
+                  </span>
+                  {msg.cost && (
+                    <span className="font-semibold whitespace-nowrap text-right">
+                      ${msg.cost.usd} (₹{msg.cost.inr})
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {/* Model message token details (Response/Candidate info) */}
               {msg.role === 'model' && (
                 <div className="text-[9px] text-text-muted flex items-center justify-between mt-2.5 pt-1.5 border-t border-border-sidebar/20 font-mono gap-4">
                   <span>
@@ -360,7 +377,10 @@ export default function ChatArea() {
                   </span>
                   {msg.tokens && (
                     <span className="truncate text-center">
-                      P: {msg.tokens.prompt.toLocaleString()} | R: {msg.tokens.candidates.toLocaleString()} tokens
+                      {msg.tokens.prompt > 0 
+                        ? `P: ${msg.tokens.prompt.toLocaleString()} | R: ${msg.tokens.candidates.toLocaleString()}`
+                        : `Output: ${msg.tokens.candidates.toLocaleString()}`
+                      } tokens
                     </span>
                   )}
                   {msg.cost && (
@@ -472,6 +492,23 @@ export default function ChatArea() {
             title="Attach Documents"
           >
             <FileText size={16} />
+          </button>
+
+          {/* TOON Compression Toggle */}
+          <button
+            type="button"
+            onClick={() => setIsToonEnabled(!isToonEnabled)}
+            className={`px-2 py-1.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer select-none uppercase tracking-wider shrink-0 font-mono ${
+              isToonEnabled 
+                ? 'bg-primary-accent border-primary-accent text-white shadow-sm font-semibold'
+                : 'bg-transparent border-border-input text-text-muted hover:text-text-main hover:border-primary-accent'
+            }`}
+            title="Enable TOON Compression (converts JSON files/prompts to TOON to save tokens)"
+          >
+            <span className="flex items-center gap-1">
+              <span className={`w-1.5 h-1.5 rounded-full transition-all ${isToonEnabled ? 'bg-white animate-pulse' : 'bg-text-muted/65'}`} />
+              TOON
+            </span>
           </button>
 
           <textarea

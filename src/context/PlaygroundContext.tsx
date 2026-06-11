@@ -157,6 +157,9 @@ interface PlaygroundContextProps {
   isRememberEnabled: boolean;
   setIsRememberEnabled: (enabled: boolean) => void;
 
+  warningModalMessage: string | null;
+  setWarningModalMessage: (message: string | null) => void;
+
   // Actions & Helpers
   fetchModels: (keyToUse?: string | object) => Promise<void>;
   handleSendMessage: (text: string, files: Attachment[]) => Promise<void>;
@@ -200,6 +203,7 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
 
   const [isToonEnabled, setIsToonEnabled] = useState(false);
   const [isRememberEnabled, setIsRememberEnabled] = useState(true);
+  const [warningModalMessage, setWarningModalMessage] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const isInitial = useRef(true);
@@ -383,7 +387,7 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
     
     const sanitizedApiKey = sanitizeApiKey(apiKey);
     if (!sanitizedApiKey) {
-      alert('Please enter a Gemini API Key to chat.');
+      setWarningModalMessage('Please enter a Gemini API Key in the left sidebar to start chatting.');
       return;
     }
 
@@ -683,6 +687,8 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
         setIsToonEnabled,
         isRememberEnabled,
         setIsRememberEnabled,
+        warningModalMessage,
+        setWarningModalMessage,
 
         fetchModels,
         handleSendMessage,

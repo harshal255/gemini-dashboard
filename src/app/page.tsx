@@ -6,6 +6,7 @@ import LeftSidebar from '../components/LeftSidebar';
 import ChatArea from '../components/ChatArea';
 import RightSidebar from '../components/RightSidebar';
 import ModelSearchModal from '../components/ModelSearchModal';
+import WarningModal from '../components/WarningModal';
 
 function PlaygroundApp() {
   const { isLeftSidebarOpen, setIsLeftSidebarOpen, isRightSidebarOpen, setIsRightSidebarOpen } = usePlayground();
@@ -26,6 +27,9 @@ function PlaygroundApp() {
 
       {/* Models Search Modal overlay */}
       <ModelSearchModal />
+
+      {/* Custom Warning modal popup */}
+      <WarningModal />
 
       {/* Backdrop overlay for mobile drawers */}
       {(isLeftSidebarOpen || isRightSidebarOpen) && (

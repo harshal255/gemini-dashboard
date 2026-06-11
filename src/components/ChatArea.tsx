@@ -242,6 +242,44 @@ export default function ChatArea() {
     await handleSendMessage(textToSend, attachmentsToSend);
   };
 
+// Preprocess markdown to collapse multiple spaces after list bullets 
+// and strip 4-space indentation outside code blocks to prevent unintended <pre> code rendering.
+const preprocessMarkdown = (text: string): string => {
+  if (!text) return '';
+  
+  const lines = text.split('\n');
+  let inFencedCodeBlock = false;
+  
+  const processedLines = lines.map((line) => {
+    if (line.trim().startsWith('```')) {
+      inFencedCodeBlock = !inFencedCodeBlock;
+      return line;
+    }
+    
+    if (inFencedCodeBlock) {
+      return line;
+    }
+    
+    // 1. Collapse multiple spaces after list bullets (e.g. "*   Subject:" -> "* Subject:")
+    let processedLine = line.replace(/^(\s*[*+-]|\s*\d+\.)[ \t]{2,}/, '$1 ');
+    
+    // 2. Avoid 4-space indentation triggering `<pre>` blocks if not inside a fenced block
+    if (processedLine.startsWith('    ') || processedLine.startsWith('\t')) {
+      const stripped = processedLine.trim();
+      const isSubBullet = /^[*+-]|\d+\./.test(stripped);
+      if (isSubBullet) {
+        processedLine = '  ' + stripped;
+      } else {
+        processedLine = stripped;
+      }
+    }
+    
+    return processedLine;
+  });
+  
+  return processedLines.join('\n');
+};
+
   const parseMessageText = (text: string, role: 'user' | 'model') => {
     if (!text) return null;
 
@@ -261,6 +299,9 @@ export default function ChatArea() {
         }
       });
     }
+
+    // Preprocess markdown indentation to prevent regular text from being treated as code blocks
+    processedText = preprocessMarkdown(processedText);
 
     try {
       const htmlContent = marked.parse(processedText, { async: false }) as string;

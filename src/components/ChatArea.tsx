@@ -2,10 +2,44 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Send, Image as ImageIcon, FileText, Loader2, Sparkles, Trash2, Menu, Info, Sun, Moon, ChevronDown, Square
+  Send, Image as ImageIcon, FileText, Loader2, Sparkles, Trash2, Menu, Info, Sun, Moon, ChevronDown, Square, Copy, Check, History
 } from 'lucide-react';
 import { marked } from 'marked';
 import { usePlayground, Attachment } from '../context/PlaygroundContext';
+
+// CopyButton helper component with clipboard copy visual feedback
+const CopyButton = ({ text, isUser = false }: { text: string; isUser?: boolean }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.warn('Failed to copy text:', err);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className={`p-1 rounded transition-all cursor-pointer flex items-center justify-center shrink-0 border ${
+        isUser
+          ? copied
+            ? 'bg-white/20 border-white/30 text-white shadow-sm'
+            : 'bg-white/5 border-white/5 text-white/60 hover:bg-white/15 hover:text-white'
+          : copied
+            ? 'bg-success-bg border-success-accent text-success-accent shadow-sm'
+            : 'bg-transparent border-border-input text-text-muted hover:text-text-main hover:border-primary-accent'
+      }`}
+      title="Copy to Clipboard"
+    >
+      {copied ? <Check size={10} /> : <Copy size={10} />}
+    </button>
+  );
+};
 
 export default function ChatArea() {
   const {
@@ -23,6 +57,8 @@ export default function ChatArea() {
     stopGeneration,
     isToonEnabled,
     setIsToonEnabled,
+    isRememberEnabled,
+    setIsRememberEnabled,
     activeModelDetails
   } = usePlayground();
 
@@ -356,39 +392,42 @@ export default function ChatArea() {
             >
               <div>{parseMessageText(msg.text, msg.role)}</div>
 
-              {/* User message token details (Prompt info) */}
-              {msg.role === 'user' && msg.tokens && msg.tokens.prompt > 0 && (
+              {/* User message token details (Prompt info) & Copy option */}
+              {msg.role === 'user' && (
                 <div className="text-[9px] text-white/70 flex items-center justify-between mt-2.5 pt-1.5 border-t border-white/20 font-mono gap-4 animate-in fade-in slide-in-from-bottom-1 duration-200">
-                  <span>
-                    Input: {msg.tokens.prompt.toLocaleString()} tokens
+                  <span className="truncate">
+                    {msg.tokens && msg.tokens.prompt > 0 
+                      ? `Input: ${msg.tokens.prompt.toLocaleString()} tokens` 
+                      : 'Prompt Input'
+                    }
+                    {msg.cost && ` | $${msg.cost.usd} (₹${msg.cost.inr})`}
                   </span>
-                  {msg.cost && (
-                    <span className="font-semibold whitespace-nowrap text-right">
-                      ${msg.cost.usd} (₹{msg.cost.inr})
-                    </span>
-                  )}
+                  <CopyButton text={msg.text} isUser />
                 </div>
               )}
 
-              {/* Model message token details (Response/Candidate info) */}
+              {/* Model message token details (Response/Candidate info) & Copy option */}
               {msg.role === 'model' && (
                 <div className="text-[9px] text-text-muted flex items-center justify-between mt-2.5 pt-1.5 border-t border-border-sidebar/20 font-mono gap-4">
-                  <span>
-                    {msg.latency !== undefined && `took ${msg.latency.toFixed(2)}s`}
-                  </span>
-                  {msg.tokens && (
-                    <span className="truncate text-center">
-                      {msg.tokens.prompt > 0 
-                        ? `P: ${msg.tokens.prompt.toLocaleString()} | R: ${msg.tokens.candidates.toLocaleString()}`
-                        : `Output: ${msg.tokens.candidates.toLocaleString()}`
-                      } tokens
+                  <div className="flex items-center gap-1.5 truncate">
+                    <span>
+                      {msg.latency !== undefined && `took ${msg.latency.toFixed(2)}s`}
                     </span>
-                  )}
-                  {msg.cost && (
-                    <span className="text-primary-accent font-semibold whitespace-nowrap text-right">
-                      ${msg.cost.usd} (₹{msg.cost.inr})
-                    </span>
-                  )}
+                    {msg.tokens && (
+                      <span>
+                        | {msg.tokens.prompt > 0 
+                          ? `P: ${msg.tokens.prompt.toLocaleString()} | R: ${msg.tokens.candidates.toLocaleString()}`
+                          : `Output: ${msg.tokens.candidates.toLocaleString()}`
+                        } tokens
+                      </span>
+                    )}
+                    {msg.cost && (
+                      <span className="text-primary-accent font-semibold">
+                        | ${msg.cost.usd} (₹{msg.cost.inr})
+                      </span>
+                    )}
+                  </div>
+                  <CopyButton text={msg.text} />
                 </div>
               )}
 
@@ -527,6 +566,41 @@ export default function ChatArea() {
               </div>
               {/* Tooltip Arrow pointing down */}
               <div className="absolute top-full left-[21px] w-2.5 h-2.5 bg-bg-sidebar border-r border-b border-border-sidebar rotate-45 -translate-y-[5px]" />
+            </div>
+          </div>
+
+          {/* Remember Conversation Context Toggle */}
+          <div className="relative group shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsRememberEnabled(!isRememberEnabled)}
+              className={`px-2 py-1.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer select-none uppercase tracking-wider shrink-0 font-mono flex items-center gap-1 ${
+                isRememberEnabled 
+                  ? 'bg-success-accent border-success-accent text-white shadow-sm font-semibold'
+                  : 'bg-transparent border-border-input text-text-muted hover:text-text-main hover:border-success-accent'
+              }`}
+            >
+              <span className="flex items-center gap-1">
+                <span className={`w-1.5 h-1.5 rounded-full transition-all ${isRememberEnabled ? 'bg-white animate-pulse' : 'bg-text-muted/65'}`} />
+                Remember
+              </span>
+            </button>
+            
+            {/* Remember Hover Note Tooltip */}
+            <div className="absolute bottom-full left-1/2 -translate-x-[60px] mb-3 w-64 p-3.5 bg-bg-sidebar border border-border-sidebar rounded-xl shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-[100] text-left font-sans text-xs select-none">
+              <div className="flex items-center gap-1.5 font-bold text-text-main mb-1.5 text-[10.5px] uppercase tracking-wider">
+                <History size={11} className="text-success-accent animate-pulse" />
+                Conversation Context
+              </div>
+              <p className="text-text-muted text-[10.5px] leading-relaxed">
+                When enabled, Gemini remembers the previous chat history to keep context. When disabled, the history is ignored and each message is sent as a clean, single-turn request.
+              </p>
+              <div className="mt-2.5 pt-2 border-t border-border-sidebar/40 flex items-center justify-between text-[9px]">
+                <span className="text-text-muted font-medium">Status: <span className={isRememberEnabled ? 'text-success-accent font-bold' : 'text-text-muted/80'}>{isRememberEnabled ? 'ON (Send Context)' : 'OFF (Single Turn)'}</span></span>
+                <span className="text-success-accent font-semibold">Contextual Chat</span>
+              </div>
+              {/* Tooltip Arrow pointing down */}
+              <div className="absolute top-full left-[60px] w-2.5 h-2.5 bg-bg-sidebar border-r border-b border-border-sidebar rotate-45 -translate-y-[5px]" />
             </div>
           </div>
 

@@ -148,6 +148,8 @@ interface PlaygroundContextProps {
 
   isToonEnabled: boolean;
   setIsToonEnabled: (enabled: boolean) => void;
+  isRememberEnabled: boolean;
+  setIsRememberEnabled: (enabled: boolean) => void;
 
   // Actions & Helpers
   fetchModels: (keyToUse?: string | object) => Promise<void>;
@@ -191,6 +193,7 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
   const [isRightSidebarOpen, setIsRightSidebarOpen] = useState(false);
 
   const [isToonEnabled, setIsToonEnabled] = useState(false);
+  const [isRememberEnabled, setIsRememberEnabled] = useState(true);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const isInitial = useRef(true);
@@ -374,10 +377,20 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
     const currentInput = text;
     const currentAttachments = [...files];
 
+    let finalInputText = currentInput;
+    if (isToonEnabled && currentInput.trim()) {
+      try {
+        const parsed = JSON.parse(currentInput.trim());
+        finalInputText = encode(parsed);
+      } catch (_) {
+        // Fallback to original text if not valid JSON
+      }
+    }
+
     const newUserMessage: ChatMessage = {
       id: Math.random().toString(36).substring(2, 9),
       role: 'user',
-      text: currentInput,
+      text: finalInputText,
       attachments: currentAttachments,
       timestamp: new Date()
     };
@@ -469,13 +482,20 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
         };
       });
 
-      const requestContents = [
-        ...historyContents,
-        {
-          role: 'user',
-          parts: parts
-        }
-      ];
+      const requestContents = isRememberEnabled
+        ? [
+            ...historyContents,
+            {
+              role: 'user',
+              parts: parts
+            }
+          ]
+        : [
+            {
+              role: 'user',
+              parts: parts
+            }
+          ];
 
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${apiKey}`;
 
@@ -639,6 +659,8 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
         setIsRightSidebarOpen,
         isToonEnabled,
         setIsToonEnabled,
+        isRememberEnabled,
+        setIsRememberEnabled,
 
         fetchModels,
         handleSendMessage,

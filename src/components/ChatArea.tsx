@@ -1,0 +1,505 @@
+'use client';
+
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Send, Image as ImageIcon, FileText, Loader2, Sparkles, Trash2, Menu, Info, Sun, Moon, ChevronDown
+} from 'lucide-react';
+import { marked } from 'marked';
+import { usePlayground, Attachment } from '../context/PlaygroundContext';
+
+export default function ChatArea() {
+  const {
+    activeModel,
+    setActiveModel,
+    models,
+    theme,
+    toggleTheme,
+    messages,
+    isSending,
+    setIsLeftSidebarOpen,
+    setIsRightSidebarOpen,
+    handleSendMessage,
+    activeModelDetails
+  } = usePlayground();
+
+  // Local state for dropdown, text inputs, attachments, drag status, and image preview
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [inputText, setInputText] = useState('');
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+
+  // Local React DOM Refs
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close selection dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Smooth scroll to bottom of chat logs
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isSending]);
+
+  // Local File Upload Handlers
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    Array.from(files).forEach(file => {
+      if (!file.type.startsWith('image/')) return;
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        setAttachments(prev => [
+          ...prev,
+          {
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            dataUrl: reader.result as string
+          }
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setAttachments(prev => [
+          ...prev,
+          {
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            textContent: reader.result as string
+          }
+        ]);
+      };
+      reader.readAsText(file);
+    });
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments(prev => prev.filter((_, idx) => idx !== index));
+  };
+
+  // Drag & Drop Handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach(file => {
+      const isImage = file.type.startsWith('image/');
+      const reader = new FileReader();
+
+      reader.onload = () => {
+        setAttachments(prev => [
+          ...prev,
+          {
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            ...(isImage ? { dataUrl: reader.result as string } : { textContent: reader.result as string })
+          }
+        ]);
+      };
+
+      if (isImage) {
+        reader.readAsDataURL(file);
+      } else {
+        reader.readAsText(file);
+      }
+    });
+  };
+
+  // Clipboard Paste Handler (e.g. for copied screenshots / images)
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    let hasFile = false;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (!file) continue;
+
+        hasFile = true;
+        const isImage = file.type.startsWith('image/');
+        const reader = new FileReader();
+
+        reader.onload = () => {
+          setAttachments(prev => [
+            ...prev,
+            {
+              name: file.name || `pasted-image-${Date.now()}.${isImage ? 'png' : 'txt'}`,
+              type: file.type,
+              size: file.size,
+              ...(isImage ? { dataUrl: reader.result as string } : { textContent: reader.result as string })
+            }
+          ]);
+        };
+
+        if (isImage) {
+          reader.readAsDataURL(file);
+        } else {
+          reader.readAsText(file);
+        }
+      }
+    }
+
+    if (hasFile) {
+      e.preventDefault();
+    }
+  };
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputText.trim() && attachments.length === 0) return;
+
+    const textToSend = inputText;
+    const attachmentsToSend = [...attachments];
+
+    // Clear inputs immediately so the user knows the message was sent
+    setInputText('');
+    setAttachments([]);
+
+    // Trigger context API call
+    await handleSendMessage(textToSend, attachmentsToSend);
+  };
+
+  const parseMessageText = (text: string, role: 'user' | 'model') => {
+    if (!text) return null;
+
+    try {
+      const htmlContent = marked.parse(text, { async: false }) as string;
+      return (
+        <div 
+          className={`markdown-body ${role === 'user' ? 'markdown-user' : 'markdown-model'}`}
+          dangerouslySetInnerHTML={{ __html: htmlContent }}
+        />
+      );
+    } catch (err) {
+      console.warn('Markdown parsing error:', err);
+      return <span>{text}</span>;
+    }
+  };
+
+  return (
+    <main 
+      className="flex-1 flex flex-col min-w-0 bg-bg-main/40 border-r border-border-sidebar h-full relative z-10"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Drag & Drop Visual Overlay */}
+      {isDragging && (
+        <div 
+          className="absolute inset-4 bg-bg-main/95 backdrop-blur-md border-2 border-dashed border-primary-accent rounded-2xl flex flex-col items-center justify-center gap-3 z-50 pointer-events-none animate-in fade-in duration-200"
+        >
+          <div className="p-4 bg-primary-accent-light rounded-full text-primary-accent">
+            <ImageIcon size={32} />
+          </div>
+          <p className="text-sm font-bold text-text-main">Drop your images or files here</p>
+          <p className="text-xs text-text-muted">Supports images and text/code files</p>
+        </div>
+      )}
+
+      {/* Chat Header */}
+      <header className="h-16 px-3 sm:px-5 border-b border-border-sidebar flex items-center justify-between bg-bg-chat-header backdrop-blur-md shrink-0 relative z-20">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <button
+            type="button"
+            className="lg:hidden p-1.5 text-text-muted hover:text-text-main rounded-md hover:bg-bg-card shrink-0 cursor-pointer"
+            onClick={() => setIsLeftSidebarOpen(true)}
+          >
+            <Menu size={18} />
+          </button>
+
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider hidden sm:inline">Model:</span>
+              {models.length > 0 ? (
+                <div className="relative inline-block text-left" ref={dropdownRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                    className="model-select-dropdown bg-bg-sidebar border border-border-sidebar rounded-lg text-[11px] font-bold text-text-main px-2 py-1.5 outline-none flex items-center justify-between gap-1.5 w-[140px] sm:w-[190px] hover:border-primary-accent transition-all shrink-0 select-none cursor-pointer"
+                  >
+                    <span className="truncate">{activeModel}</span>
+                    <ChevronDown size={11} className={`transform transition-transform shrink-0 text-text-muted ${isDropdownOpen ? 'rotate-180' : 'rotate-0'}`} />
+                  </button>
+
+                  {isDropdownOpen && (
+                    <div className="absolute left-0 mt-1 z-50 w-56 max-h-60 overflow-y-auto bg-bg-sidebar border border-border-sidebar rounded-xl shadow-lg p-1.5 focus:outline-none animate-in fade-in duration-100 no-scrollbar">
+                      {models.map(m => (
+                        <button
+                          key={m.name}
+                          type="button"
+                          onClick={() => {
+                            setActiveModel(m.name);
+                            setIsDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all truncate block cursor-pointer ${activeModel === m.name
+                            ? 'bg-primary-accent-light text-primary-accent dark:text-primary-accent-hover font-bold'
+                            : 'text-text-muted hover:text-text-main hover:bg-bg-card'
+                            }`}
+                        >
+                          {m.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <span className="text-xs font-bold text-text-main truncate">{activeModelDetails.name}</span>
+              )}
+            </div>
+            <span className="text-[10px] text-text-muted hidden sm:inline max-w-[500px] lg:max-w-[700px] leading-relaxed mt-0.5 truncate">{activeModelDetails.description}</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
+          <div className={`status-badge px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 sm:gap-1.5 ${models.length > 0 ? 'bg-success-bg text-success-accent' : 'bg-red-500/10 text-red-400'
+            }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${models.length > 0 ? 'bg-success-accent' : 'bg-red-400'}`} />
+            {models.length > 0 ? 'Connected' : 'Disconnected'}
+          </div>
+
+          {/* Theme Toggle Button */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="p-1.5 text-text-muted hover:text-text-main rounded-md hover:bg-bg-card transition-all cursor-pointer"
+            title="Toggle Theme Mode"
+          >
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+
+          <button
+            type="button"
+            className="lg:hidden p-1.5 text-text-muted hover:text-text-main rounded-md hover:bg-bg-card cursor-pointer"
+            onClick={() => setIsRightSidebarOpen(true)}
+          >
+            <Info size={18} />
+          </button>
+        </div>
+      </header>
+
+      {/* Messages List */}
+      <div className="flex-1 overflow-y-auto p-5 space-y-4 flex flex-col">
+        {messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center max-w-[400px] mx-auto space-y-4">
+            <Sparkles size={40} className="text-text-muted animate-pulse" />
+            <h3 className="text-sm font-bold text-text-main uppercase tracking-wider">Gemini Playground</h3>
+            <p className="text-xs text-text-muted leading-relaxed">
+              Enter your key, choose a reasoning model from the list, and write prompts or attach files to validate connectivity.
+            </p>
+          </div>
+        ) : (
+          messages.map(msg => (
+            <div
+              key={msg.id}
+              className={`flex flex-col max-w-[85%] sm:max-w-[75%] p-4 rounded-2xl text-[13px] leading-relaxed relative ${msg.role === 'user'
+                ? 'self-end bg-primary-accent text-white rounded-tr-none shadow-[0_4px_16px_var(--primary-accent-light)]'
+                : 'self-start bg-bg-chat-ai border border-border-chat-ai text-text-main rounded-tl-none'
+                }`}
+            >
+              <div>{parseMessageText(msg.text, msg.role)}</div>
+
+              {msg.role === 'model' && msg.latency !== undefined && (
+                <div className="text-[9px] text-text-muted text-right mt-2 font-mono">
+                  took {msg.latency.toFixed(2)}s
+                </div>
+              )}
+
+              {msg.attachments && msg.attachments.length > 0 && (
+                <div className="flex gap-2 flex-wrap mt-3">
+                  {msg.attachments.map((att, idx) => (
+                    <div key={idx} className="flex flex-col">
+                      {att.dataUrl ? (
+                        <img
+                          src={att.dataUrl}
+                          alt={att.name}
+                          onClick={() => setPreviewImageUrl(att.dataUrl || null)}
+                          className="max-w-[120px] max-h-[120px] rounded-lg object-cover border border-border-sidebar mt-1 cursor-zoom-in hover:brightness-90 transition-all"
+                        />
+                      ) : (
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-bg-input border border-border-input text-[10px] text-text-muted">
+                          <FileText size={10} />
+                          <span>{att.name}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))
+        )}
+        {isSending && (
+          <div className="self-start flex items-center gap-2.5 bg-bg-card border border-border-card px-4 py-3 rounded-2xl rounded-tl-none text-[13px] text-text-muted">
+            <Loader2 className="animate-spin text-primary-accent" size={14} />
+            <span>Gemini is thinking...</span>
+          </div>
+        )}
+        <div ref={chatEndRef} />
+      </div>
+
+      {/* Input Shelf & Form */}
+      <div className="p-3 sm:p-5 border-t border-border-sidebar bg-bg-sidebar/30 backdrop-blur-md shrink-0">
+        {attachments.length > 0 && (
+          <div className="flex gap-2 flex-wrap mb-3">
+            {attachments.map((att, idx) => (
+              <div key={idx} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-bg-input border border-border-input text-[11px] text-text-main">
+                {att.dataUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewImageUrl(att.dataUrl || null)}
+                    className="flex items-center gap-1.5 hover:text-primary-accent transition-all cursor-zoom-in font-medium"
+                    title="Preview Image"
+                  >
+                    <ImageIcon size={11} />
+                    <span className="max-w-[120px] truncate">{att.name}</span>
+                  </button>
+                ) : (
+                  <>
+                    <FileText size={11} />
+                    <span className="max-w-[120px] truncate">{att.name}</span>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removeAttachment(idx)}
+                  className="text-text-muted hover:text-red-400 cursor-pointer"
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <form onSubmit={onSubmit} className="flex gap-3 bg-bg-input border border-border-input rounded-xl p-2 items-center focus-within:border-primary-accent transition-all min-w-0 w-full">
+          <input
+            type="file"
+            aria-label="Attach Images"
+            accept="image/*"
+            ref={imageInputRef}
+            className="hidden"
+            onChange={handleImageUpload}
+            multiple
+          />
+          <input
+            type="file"
+            aria-label="Attach Documents"
+            accept=".pdf,.txt,.json,.csv,.js,.ts,.py,.html,.css"
+            ref={docInputRef}
+            className="hidden"
+            onChange={handleDocUpload}
+          />
+
+          <button
+            type="button"
+            className="p-2 text-text-muted hover:text-text-main rounded-lg hover:bg-bg-card transition-all shrink-0 cursor-pointer"
+            onClick={() => imageInputRef.current?.click()}
+            title="Attach Images"
+          >
+            <ImageIcon size={16} />
+          </button>
+          <button
+            type="button"
+            className="p-2 text-text-muted hover:text-text-main rounded-lg hover:bg-bg-card transition-all shrink-0 cursor-pointer"
+            onClick={() => docInputRef.current?.click()}
+            title="Attach Documents"
+          >
+            <FileText size={16} />
+          </button>
+
+          <textarea
+            placeholder="Ask Gemini anything..."
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                onSubmit(e);
+              }
+            }}
+            onPaste={handlePaste}
+            className="flex-1 bg-transparent border-none outline-none resize-none text-[13px] text-text-main py-1 max-h-24 h-6 font-sans placeholder-gray-600 no-scrollbar min-w-0"
+          />
+
+          <button
+            type="submit"
+            className="p-2 bg-primary-accent text-white rounded-lg hover:bg-primary-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0 cursor-pointer"
+            disabled={isSending || (!inputText.trim() && attachments.length === 0)}
+          >
+            <Send size={12} />
+          </button>
+        </form>
+      </div>
+      {/* Full-screen Image Preview Modal */}
+      {previewImageUrl && (
+        <div 
+          className="fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4 sm:p-10 animate-in fade-in duration-200"
+          onClick={() => setPreviewImageUrl(null)}
+        >
+          <button 
+            type="button"
+            className="absolute top-4 right-4 text-white/70 hover:text-white bg-black/40 hover:bg-black/60 p-2.5 rounded-full transition-all cursor-pointer z-50"
+            onClick={() => setPreviewImageUrl(null)}
+            aria-label="Close Preview"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </button>
+          
+          {/* Framed card wrapper to prevent landscape images from over-stretching */}
+          <div 
+            className="bg-bg-sidebar/95 border border-border-sidebar/40 rounded-2xl p-2 sm:p-4 max-w-[95vw] sm:max-w-4xl max-h-[85vh] flex items-center justify-center shadow-2xl animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img 
+              src={previewImageUrl} 
+              alt="Preview" 
+              className="max-w-full max-h-[75vh] sm:max-h-[80vh] object-contain rounded-xl"
+            />
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}

@@ -89,6 +89,24 @@ export default function RightSidebar() {
             {tokenUsage ? tokenUsage.total : '—'}
           </span>
         </div>
+        {tokenUsage && (
+          <div className="flex flex-col gap-1.5 border-t border-border-sidebar/55 pt-3 mt-3 text-xs">
+            <div className="flex justify-between">
+              <span className="text-text-muted font-medium">Est. Cost (USD)</span>
+              <span className="font-bold text-success-accent">
+                ${((tokenUsage.prompt * (activeModelDetails.name.includes('pro') ? (1.25 / 1000000) : (0.075 / 1000000))) + 
+                  (tokenUsage.candidates * (activeModelDetails.name.includes('pro') ? (5.00 / 1000000) : (0.30 / 1000000)))).toFixed(6)}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted font-medium">Est. Cost (INR)</span>
+              <span className="font-bold text-primary-accent">
+                ₹{(((tokenUsage.prompt * (activeModelDetails.name.includes('pro') ? (1.25 / 1000000) : (0.075 / 1000000))) + 
+                  (tokenUsage.candidates * (activeModelDetails.name.includes('pro') ? (5.00 / 1000000) : (0.30 / 1000000)))) * 95.4).toFixed(4)}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Gemini Quota Estimator & Rate Limits */}

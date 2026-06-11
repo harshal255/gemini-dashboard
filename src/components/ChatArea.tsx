@@ -353,9 +353,21 @@ export default function ChatArea() {
             >
               <div>{parseMessageText(msg.text, msg.role)}</div>
 
-              {msg.role === 'model' && msg.latency !== undefined && (
-                <div className="text-[9px] text-text-muted text-right mt-2 font-mono">
-                  took {msg.latency.toFixed(2)}s
+              {msg.role === 'model' && (
+                <div className="text-[9px] text-text-muted flex items-center justify-between mt-2.5 pt-1.5 border-t border-border-sidebar/20 font-mono gap-4">
+                  <span>
+                    {msg.latency !== undefined && `took ${msg.latency.toFixed(2)}s`}
+                  </span>
+                  {msg.tokens && (
+                    <span className="truncate text-center">
+                      P: {msg.tokens.prompt.toLocaleString()} | R: {msg.tokens.candidates.toLocaleString()} tokens
+                    </span>
+                  )}
+                  {msg.cost && (
+                    <span className="text-primary-accent font-semibold whitespace-nowrap text-right">
+                      ${msg.cost.usd} (₹{msg.cost.inr})
+                    </span>
+                  )}
                 </div>
               )}
 

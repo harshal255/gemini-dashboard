@@ -17,6 +17,8 @@ export interface ChatMessage {
   attachments?: Attachment[];
   timestamp: Date;
   latency?: number;
+  tokens?: { prompt: number; candidates: number; total: number };
+  cost?: { usd: string; inr: string };
 }
 
 export interface ModelInfo {
@@ -456,14 +458,33 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
       const data = await response.json();
       const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
+      let messageTokens: { prompt: number; candidates: number; total: number } | undefined;
+      let messageCost: { usd: string; inr: string } | undefined;
+
       if (data.usageMetadata) {
-        const tokens = {
-          prompt: data.usageMetadata.promptTokenCount || 0,
-          candidates: data.usageMetadata.candidatesTokenCount || 0,
-          total: data.usageMetadata.totalTokenCount || 0
+        const promptTokens = data.usageMetadata.promptTokenCount || 0;
+        const candidateTokens = data.usageMetadata.candidatesTokenCount || 0;
+        const totalTokens = data.usageMetadata.totalTokenCount || 0;
+
+        messageTokens = {
+          prompt: promptTokens,
+          candidates: candidateTokens,
+          total: totalTokens
         };
-        setTokenUsage(tokens);
-        localStorage.setItem('gemini_tester_last_token_usage', JSON.stringify(tokens));
+
+        const isPro = activeModel.includes('pro');
+        const inputRate = isPro ? (1.25 / 1000000) : (0.075 / 1000000);
+        const outputRate = isPro ? (5.00 / 1000000) : (0.30 / 1000000);
+        const costUSD = (promptTokens * inputRate) + (candidateTokens * outputRate);
+        const costINR = costUSD * 95.4;
+
+        messageCost = {
+          usd: costUSD.toFixed(6),
+          inr: costINR.toFixed(4)
+        };
+
+        setTokenUsage(messageTokens);
+        localStorage.setItem('gemini_tester_last_token_usage', JSON.stringify(messageTokens));
       }
 
       const newModelMessage: ChatMessage = {
@@ -471,7 +492,9 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
         role: 'model',
         text: textResponse,
         timestamp: new Date(),
-        latency: durationSeconds
+        latency: durationSeconds,
+        tokens: messageTokens,
+        cost: messageCost
       };
 
       setMessages(prev => [...prev, newModelMessage]);

@@ -457,6 +457,12 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
         }
       });
 
+      if (isToonEnabled) {
+        parts.push({
+          text: "\n\n[TOON Compression Directive: If you need to generate structured data, lists, tables, or JSON structures in your response, please output it in the compact TOON format using the '#schema key1,key2\\nvalue1,value2' representation. Please wrap this data inside a ```toon\\n...\\n``` block instead of standard JSON or markdown tables. Do not write normal JSON blocks. The client will automatically unpack the TOON block back to pretty JSON.]"
+        });
+      }
+
       const historyContents = messages.map(msg => {
         const histParts: any[] = [{ text: msg.text }];
 

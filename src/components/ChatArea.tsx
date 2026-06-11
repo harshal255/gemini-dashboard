@@ -5,6 +5,7 @@ import {
   Send, Image as ImageIcon, FileText, Loader2, Sparkles, Trash2, Menu, Info, Sun, Moon, ChevronDown, Square, Copy, Check, History
 } from 'lucide-react';
 import { marked } from 'marked';
+import { decode } from '@toon-format/toon';
 import { usePlayground, Attachment } from '../context/PlaygroundContext';
 
 // CopyButton helper component with clipboard copy visual feedback
@@ -244,8 +245,25 @@ export default function ChatArea() {
   const parseMessageText = (text: string, role: 'user' | 'model') => {
     if (!text) return null;
 
+    let processedText = text;
+
+    // Decode TOON blocks inside model responses
+    if (role === 'model') {
+      const toonRegex = /```toon\s*([\s\S]*?)```/g;
+      processedText = text.replace(toonRegex, (match, toonContent) => {
+        try {
+          const decoded = decode(toonContent.trim());
+          const prettyJson = JSON.stringify(decoded, null, 2);
+          return `\`\`\`json\n// Decoded from TOON (Optimized Output)\n${prettyJson}\n\`\`\``;
+        } catch (err) {
+          console.warn('Failed to decode TOON output:', err);
+          return match;
+        }
+      });
+    }
+
     try {
-      const htmlContent = marked.parse(text, { async: false }) as string;
+      const htmlContent = marked.parse(processedText, { async: false }) as string;
       return (
         <div 
           className={`markdown-body ${role === 'user' ? 'markdown-user' : 'markdown-model'}`}

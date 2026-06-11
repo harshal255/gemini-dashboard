@@ -3,6 +3,11 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { encode } from '@toon-format/toon';
 
+const sanitizeApiKey = (key: string): string => {
+  if (!key) return '';
+  return key.replace(/[\u200b-\u200d\uFEFF\u200e\u200f\u202a-\u202e]/g, '').trim();
+};
+
 export interface Attachment {
   name: string;
   type: string;
@@ -202,7 +207,8 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
 
   // Initialize client-side states safely
   useEffect(() => {
-    const savedKey = localStorage.getItem('gemini_tester_api_key') || getCookie('gemini_api_key') || getCookie('gemini_tester_api_key') || '';
+    const rawKey = localStorage.getItem('gemini_tester_api_key') || getCookie('gemini_api_key') || getCookie('gemini_tester_api_key') || '';
+    const savedKey = sanitizeApiKey(rawKey);
     setApiKey(savedKey);
     setDebouncedApiKey(savedKey);
 
@@ -242,6 +248,9 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
       // Set initialized flag ONLY after messages are loaded to prevent empty overwrite
       setTimeout(() => {
         loadedRef.current = true;
+        if (savedKey) {
+          fetchModels(savedKey);
+        }
       }, 0);
     });
   }, []);
@@ -321,9 +330,10 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
   };
 
   const fetchModels = async (keyToUse: string | object = apiKey) => {
-    const actualKey = typeof keyToUse === 'string' ? keyToUse : apiKey;
+    let actualKey = typeof keyToUse === 'string' ? keyToUse : apiKey;
+    actualKey = sanitizeApiKey(actualKey);
 
-    if (!actualKey.trim()) {
+    if (!actualKey) {
       setModels([]);
       setModelError('Please enter a Gemini API Key to fetch models.');
       return;
@@ -370,7 +380,9 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
 
   const handleSendMessage = async (text: string, files: Attachment[]) => {
     if (!text.trim() && files.length === 0) return;
-    if (!apiKey.trim()) {
+    
+    const sanitizedApiKey = sanitizeApiKey(apiKey);
+    if (!sanitizedApiKey) {
       alert('Please enter a Gemini API Key to chat.');
       return;
     }
@@ -505,7 +517,7 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
             }
           ];
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:generateContent?key=${sanitizedApiKey}`;
 
       const controller = new AbortController();
       abortControllerRef.current = controller;

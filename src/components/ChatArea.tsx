@@ -494,22 +494,40 @@ export default function ChatArea() {
             <FileText size={16} />
           </button>
 
-          {/* TOON Compression Toggle */}
-          <button
-            type="button"
-            onClick={() => setIsToonEnabled(!isToonEnabled)}
-            className={`px-2 py-1.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer select-none uppercase tracking-wider shrink-0 font-mono ${
-              isToonEnabled 
-                ? 'bg-primary-accent border-primary-accent text-white shadow-sm font-semibold'
-                : 'bg-transparent border-border-input text-text-muted hover:text-text-main hover:border-primary-accent'
-            }`}
-            title="Enable TOON Compression (converts JSON files/prompts to TOON to save tokens)"
-          >
-            <span className="flex items-center gap-1">
-              <span className={`w-1.5 h-1.5 rounded-full transition-all ${isToonEnabled ? 'bg-white animate-pulse' : 'bg-text-muted/65'}`} />
-              TOON
-            </span>
-          </button>
+          {/* TOON Compression Toggle with Rich Tooltip Note */}
+          <div className="relative group shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsToonEnabled(!isToonEnabled)}
+              className={`px-2 py-1.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer select-none uppercase tracking-wider shrink-0 font-mono ${
+                isToonEnabled 
+                  ? 'bg-primary-accent border-primary-accent text-white shadow-sm font-semibold'
+                  : 'bg-transparent border-border-input text-text-muted hover:text-text-main hover:border-primary-accent'
+              }`}
+            >
+              <span className="flex items-center gap-1">
+                <span className={`w-1.5 h-1.5 rounded-full transition-all ${isToonEnabled ? 'bg-white animate-pulse' : 'bg-text-muted/65'}`} />
+                TOON
+              </span>
+            </button>
+            
+            {/* TOON Hover Note Tooltip */}
+            <div className="absolute bottom-full left-1/2 -translate-x-[25px] mb-3 w-64 p-3.5 bg-bg-sidebar border border-border-sidebar rounded-xl shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-[100] text-left font-sans text-xs select-none">
+              <div className="flex items-center gap-1.5 font-bold text-text-main mb-1.5 text-[10.5px] uppercase tracking-wider">
+                <Sparkles size={11} className="text-primary-accent animate-pulse" />
+                What is TOON Format?
+              </div>
+              <p className="text-text-muted text-[10.5px] leading-relaxed">
+                TOON is an optimized schema serialization format. When enabled, it compresses complex JSON inputs and JSON file attachments to drastically reduce their footprint, saving up to <strong>30%–50%</strong> of your Gemini input tokens and reducing query costs.
+              </p>
+              <div className="mt-2.5 pt-2 border-t border-border-sidebar/40 flex items-center justify-between text-[9px]">
+                <span className="text-text-muted font-medium">Status: <span className={isToonEnabled ? 'text-success-accent font-bold' : 'text-text-muted/80'}>{isToonEnabled ? 'ACTIVE (ON)' : 'INACTIVE (OFF)'}</span></span>
+                <span className="text-primary-accent font-semibold">Saves Token Quotas</span>
+              </div>
+              {/* Tooltip Arrow pointing down */}
+              <div className="absolute top-full left-[21px] w-2.5 h-2.5 bg-bg-sidebar border-r border-b border-border-sidebar rotate-45 -translate-y-[5px]" />
+            </div>
+          </div>
 
           <textarea
             placeholder="Ask Gemini anything..."

@@ -586,13 +586,13 @@ export default function ChatArea() {
                 What is TOON Format?
               </div>
               <p className="text-text-muted text-[10.5px] leading-relaxed mb-2.5">
-                TOON is an optimized serialization format. It compresses complex JSON inputs and instructs Gemini to write responses in TOON, saving <strong>30%–50%</strong> of tokens. Note: Teaching the model TOON requires a static system instruction overhead of <strong>~97 tokens</strong>.
+                TOON is an optimized serialization format. It compresses flat/tabular JSON structures and instructs Gemini to write responses in TOON, saving <strong>30%–50%</strong> of tokens. Note: Teaching the model TOON requires a static system instruction overhead of <strong>~97 tokens</strong>.
               </p>
 
               <div className="bg-bg-input/40 border border-border-input/30 rounded-lg p-2.5 mb-2.5 text-[10px] space-y-1 text-text-muted">
                 <div className="font-semibold text-text-main text-[10.5px] mb-0.5">💡 Usage Guide:</div>
-                <div>✔️ <strong className="text-primary-accent">ON:</strong> For structured JSON, nested files, table prompts, or list generation (where token savings far exceed the ~97 token system instructions overhead).</div>
-                <div>❌ <strong className="text-text-main">OFF:</strong> For simple plain text queries or short messages (avoids the extra ~97 instruction tokens).</div>
+                <div>✔️ <strong className="text-primary-accent">ON:</strong> For <strong>flat (flattened) JSON</strong>, tabular data, table prompts, or list generation where savings far exceed the ~97 token overhead.</div>
+                <div>❌ <strong className="text-text-main">OFF:</strong> For <strong>deeply nested JSON</strong> objects (which degrade TOON efficiency and consume more tokens) or simple plain text queries.</div>
               </div>
 
               <div className="pt-2.5 border-t border-border-sidebar/40 flex items-center justify-between text-[9px]">

@@ -1,28 +1,13 @@
 import type { Metadata } from "next";
-import { Geist_Mono } from "next/font/google";
-import localFont from "next/font/local";
+import { Geist_Mono, Josefin_Sans } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 
-const neueKabel = localFont({
-  src: [
-    {
-      path: "../assets/Neue_Kabel_Light.otf",
-      weight: "300",
-      style: "normal",
-    },
-    {
-      path: "../assets/Neue_Kabel_Light_Italic.otf",
-      weight: "300",
-      style: "italic",
-    },
-    {
-      path: "../assets/Neue_Kabel_Bold.otf",
-      weight: "700",
-      style: "normal",
-    },
-  ],
-  variable: "--font-neue-kabel",
+const josefinSans = Josefin_Sans({
+  variable: "--font-josefin-sans",
+  subsets: ["latin"],
+  weight: ["300", "400", "700"],
+  style: ["normal", "italic"],
 });
 
 const geistMono = Geist_Mono({
@@ -57,7 +42,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${neueKabel.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${josefinSans.variable} ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <head>

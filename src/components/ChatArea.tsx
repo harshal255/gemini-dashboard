@@ -201,6 +201,11 @@ export default function ChatArea() {
   const [expandedThoughts, setExpandedThoughts] = useState<Record<string, boolean>>({});
 
   const [chatCopied, setChatCopied] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleCopyChat = async () => {
     if (messages.length === 0) return;
@@ -1024,7 +1029,7 @@ const preprocessMarkdown = (text: string): string => {
                 <button
                   type="submit"
                   className="p-2 bg-primary-accent text-white rounded-lg hover:bg-primary-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0 cursor-pointer flex items-center justify-center"
-                  disabled={!inputText.trim() && attachments.length === 0}
+                  disabled={!mounted || (!inputText.trim() && attachments.length === 0)}
                 >
                   <Send size={12} />
                 </button>

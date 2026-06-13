@@ -425,7 +425,9 @@ const preprocessMarkdown = (text: string): string => {
     processedText = preprocessMarkdown(processedText);
 
     try {
-      const htmlContent = marked.parse(processedText, { async: false }) as string;
+      let htmlContent = marked.parse(processedText, { async: false }) as string;
+      // Force all links in parsed markdown to open in a new tab
+      htmlContent = htmlContent.replace(/<a\s+href=/g, '<a target="_blank" rel="noopener noreferrer" href=');
       return (
         <div 
           className={`markdown-body ${role === 'user' ? 'markdown-user' : 'markdown-model'}`}

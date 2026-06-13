@@ -8,6 +8,51 @@ const sanitizeApiKey = (key: string): string => {
   return key.replace(/[\u200b-\u200d\uFEFF\u200e\u200f\u202a-\u202e]/g, '').trim();
 };
 
+const addCitations = (text: string, groundingMetadata: any): string => {
+  if (!text || !groundingMetadata) return text;
+
+  const supports = groundingMetadata.groundingSupports;
+  const chunks = groundingMetadata.groundingChunks;
+
+  if (!supports || !chunks || supports.length === 0 || chunks.length === 0) {
+    return text;
+  }
+
+  // Sort supports by endIndex in descending order to avoid shifting issues when inserting
+  const sortedSupports = [...supports].sort(
+    (a, b) => (b.segment?.endIndex ?? 0) - (a.segment?.endIndex ?? 0)
+  );
+
+  let resultText = text;
+
+  for (const support of sortedSupports) {
+    const endIndex = support.segment?.endIndex;
+    if (endIndex === undefined || !support.groundingChunkIndices?.length) {
+      continue;
+    }
+
+    const citationLinks = support.groundingChunkIndices
+      .map((i: number) => {
+        const chunk = chunks[i];
+        const uri = chunk?.web?.uri || chunk?.uri;
+        if (uri) {
+          return `[${i + 1}](${uri})`;
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    if (citationLinks.length > 0) {
+      const citationString = ` <sup>${citationLinks.join(', ')}</sup>`;
+      if (endIndex <= resultText.length) {
+        resultText = resultText.slice(0, endIndex) + citationString + resultText.slice(endIndex);
+      }
+    }
+  }
+
+  return resultText;
+};
+
 export interface Attachment {
   name: string;
   type: string;
@@ -26,6 +71,8 @@ export interface ChatMessage {
   tokens?: { prompt: number; candidates: number; total: number };
   cost?: { usd: string; inr: string };
   isToonEnabled?: boolean;
+  groundingMetadata?: any;
+  thinking?: string;
 }
 
 export interface ModelInfo {
@@ -156,6 +203,8 @@ interface PlaygroundContextProps {
   setIsToonEnabled: (enabled: boolean) => void;
   isRememberEnabled: boolean;
   setIsRememberEnabled: (enabled: boolean) => void;
+  isWebSearchEnabled: boolean;
+  setIsWebSearchEnabled: (enabled: boolean) => void;
 
   warningModalMessage: string | null;
   setWarningModalMessage: (message: string | null) => void;
@@ -203,6 +252,7 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
 
   const [isToonEnabled, setIsToonEnabled] = useState(false);
   const [isRememberEnabled, setIsRememberEnabled] = useState(true);
+  const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false);
   const [warningModalMessage, setWarningModalMessage] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -236,6 +286,9 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
     } else {
       document.documentElement.classList.remove('dark');
     }
+
+    const savedWebSearch = localStorage.getItem('gemini_tester_web_search') === 'true';
+    setIsWebSearchEnabled(savedWebSearch);
 
     // Load messages from IndexedDB
     getMessagesFromDB().then((history) => {
@@ -319,6 +372,12 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
     if (!loadedRef.current) return;
     saveMessagesToDB(messages);
   }, [messages]);
+
+  // Sync Web Search Toggle
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    localStorage.setItem('gemini_tester_web_search', isWebSearchEnabled.toString());
+  }, [isWebSearchEnabled]);
 
   const stopGeneration = () => {
     if (abortControllerRef.current) {
@@ -474,7 +533,13 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
       });
 
       const historyContents = messages.map(msg => {
-        const histParts: any[] = [{ text: msg.text }];
+        const histParts: any[] = [];
+
+        if (msg.role === 'model' && msg.thinking) {
+          histParts.push({ text: msg.thinking, thought: true });
+        }
+
+        histParts.push({ text: msg.text });
 
         if (msg.attachments) {
           msg.attachments.forEach(att => {
@@ -520,10 +585,16 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
+      // Construct payload with optional Google Search Grounding tools
+      const payload: any = { contents: requestContents };
+      if (isWebSearchEnabled) {
+        payload.tools = [{ google_search: {} }];
+      }
+
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: requestContents }),
+        body: JSON.stringify(payload),
         signal: controller.signal
       });
 
@@ -538,7 +609,54 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
       }
 
       const data = await response.json();
-      const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      
+      const candidate = data.candidates?.[0];
+      const candidateParts = candidate?.content?.parts || [];
+      
+      let textResponse = '';
+      let thinkingResponse = '';
+      
+      const hasThoughtFlag = candidateParts.some((p: any) => p.thought === true);
+      
+      if (hasThoughtFlag) {
+        for (const part of candidateParts) {
+          if (part.text) {
+            if (part.thought === true) {
+              thinkingResponse += (thinkingResponse ? '\n\n' : '') + part.text;
+            } else {
+              textResponse += part.text;
+            }
+          }
+        }
+      } else {
+        if (candidateParts.length > 1 && candidateParts[0].text && candidateParts[1].text) {
+          const firstText = candidateParts[0].text.trim();
+          const isFirstThought = /i\s+will\s+search|i\s+will\s+look|i\s+should\s+try|thinking|reasoning|plan/i.test(firstText) && firstText.length < 1000;
+          if (isFirstThought) {
+            thinkingResponse = firstText;
+            textResponse = candidateParts.slice(1).map((p: any) => p.text || '').join('');
+          } else {
+            textResponse = candidateParts.map((p: any) => p.text || '').join('');
+          }
+        } else {
+          textResponse = candidateParts.map((p: any) => p.text || '').join('');
+        }
+      }
+      
+      if (!textResponse && thinkingResponse) {
+        textResponse = thinkingResponse;
+        thinkingResponse = '';
+      }
+      
+      // Inject inline citations if grounding metadata is present
+      const groundingMetadata = candidate?.groundingMetadata;
+      if (groundingMetadata && textResponse) {
+        try {
+          textResponse = addCitations(textResponse, groundingMetadata);
+        } catch (err) {
+          console.warn('Error adding citations:', err);
+        }
+      }
 
       if (data.usageMetadata) {
         const promptTokens = data.usageMetadata.promptTokenCount || 0;
@@ -568,6 +686,7 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
           id: Math.random().toString(36).substring(2, 9),
           role: 'model',
           text: textResponse,
+          thinking: thinkingResponse || undefined,
           timestamp: new Date(),
           latency: durationSeconds,
           isToonEnabled: isToonEnabled,
@@ -579,7 +698,8 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
           cost: {
             usd: candidateCostUSD.toFixed(6),
             inr: candidateCostINR.toFixed(4)
-          }
+          },
+          groundingMetadata: groundingMetadata
         };
 
         setMessages(prev => {
@@ -608,9 +728,11 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
           id: Math.random().toString(36).substring(2, 9),
           role: 'model',
           text: textResponse,
+          thinking: thinkingResponse || undefined,
           timestamp: new Date(),
           latency: durationSeconds,
-          isToonEnabled: isToonEnabled
+          isToonEnabled: isToonEnabled,
+          groundingMetadata: groundingMetadata
         };
         setMessages(prev => [...prev, newModelMessage]);
       }
@@ -681,6 +803,8 @@ export function PlaygroundProvider({ children }: { children: React.ReactNode }) 
         setIsToonEnabled,
         isRememberEnabled,
         setIsRememberEnabled,
+        isWebSearchEnabled,
+        setIsWebSearchEnabled,
         warningModalMessage,
         setWarningModalMessage,
 

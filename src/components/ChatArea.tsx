@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Send, Image as ImageIcon, FileText, Loader2, Sparkles, Trash2, Menu, Info, Sun, Moon, ChevronDown, Square, Copy, Check, History
+  Send, Image as ImageIcon, FileText, Loader2, Sparkles, Trash2, Menu, Info, Sun, Moon, ChevronDown, Square, Copy, Check, History, Globe
 } from 'lucide-react';
 import { marked } from 'marked';
 import { usePlayground, Attachment } from '../context/PlaygroundContext';
@@ -42,6 +42,7 @@ const CopyButton = ({ text, isUser = false }: { text: string; isUser?: boolean }
 };
 
 // Helper function to extract thinking process and actual response from model text
+// Helper function to extract thinking process and actual response from model text
 const splitThinkingAndResponse = (text: string): { thinking: string | null; response: string } => {
   if (!text) return { thinking: null, response: '' };
 
@@ -79,8 +80,36 @@ const splitThinkingAndResponse = (text: string): { thinking: string | null; resp
     }
   }
 
-  // 3. Last paragraph in quotes style (e.g., "Okay!...")
+  // 3. Multi-paragraph quoted response parser (handles responses with mixed thinking, bullets, and one or more quoted response paragraphs)
   const paragraphs = text.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  if (paragraphs.length > 1) {
+    const quotedParagraphs: string[] = [];
+    const thinkingParagraphs: string[] = [];
+
+    for (const p of paragraphs) {
+      if (p.startsWith('"') && p.endsWith('"') && p.length > 2) {
+        quotedParagraphs.push(p.slice(1, -1).trim());
+      } else {
+        thinkingParagraphs.push(p);
+      }
+    }
+
+    if (quotedParagraphs.length > 0 && thinkingParagraphs.length > 0) {
+      const hasThinkingKeywords = thinkingParagraphs.some(p => 
+        /user\s+(said|asked|responded)|draft|correction|goal|interpret|should:|thinking|acknowledge|search/i.test(p) ||
+        p.startsWith('*') || p.startsWith('-') || /^\d+\./.test(p)
+      );
+
+      if (hasThinkingKeywords) {
+        return {
+          thinking: thinkingParagraphs.join('\n\n'),
+          response: quotedParagraphs.join('\n\n')
+        };
+      }
+    }
+  }
+
+  // 4. Last paragraph in quotes style (e.g., "Okay!...")
   if (paragraphs.length > 1) {
     const lastParagraph = paragraphs[paragraphs.length - 1];
     if (lastParagraph.startsWith('"') && lastParagraph.endsWith('"') && lastParagraph.length > 2) {
@@ -92,6 +121,45 @@ const splitThinkingAndResponse = (text: string): { thinking: string | null; resp
         const thinking = paragraphs.slice(0, -1).join('\n\n');
         const response = lastParagraph.slice(1, -1).trim();
         return { thinking, response };
+      }
+    }
+  }
+
+  // 5. Fallback for "Reasoning-only" outputs containing quoted drafts in the last paragraph
+  if (paragraphs.length > 0) {
+    const lastParagraph = paragraphs[paragraphs.length - 1];
+    const hasThinkingKeywords = paragraphs.some(p => 
+      /user\s+(said|asked|responded)|draft|correction|goal|interpret|should:|thinking|acknowledge/i.test(p) ||
+      p.startsWith('*') || p.startsWith('-') || /^\d+\./.test(p)
+    );
+    if (hasThinkingKeywords) {
+      const quoteMatches = [...lastParagraph.matchAll(/"([^"]+)"/g)];
+      if (quoteMatches.length > 0) {
+        const response = quoteMatches[0][1].trim();
+        return {
+          thinking: text.trim(),
+          response: response
+        };
+      }
+    }
+  }
+
+  // 6. Alternative fallback: If the response has thinking keywords/bullets in the earlier paragraphs
+  // but the very last paragraph is a normal response text (not in quotes), extract it as response.
+  if (paragraphs.length > 1) {
+    const lastParagraph = paragraphs[paragraphs.length - 1];
+    const isLastParagraphBulletOrHeading = lastParagraph.startsWith('*') || lastParagraph.startsWith('-') || /^\d+\./.test(lastParagraph) || lastParagraph.startsWith('#');
+    const earlierHasThinkingKeywords = paragraphs.slice(0, -1).some(p => 
+      /user\s+(said|asked|responded)|draft|correction|goal|interpret|should:|thinking|acknowledge/i.test(p) ||
+      p.startsWith('*') || p.startsWith('-') || /^\d+\./.test(p)
+    );
+    if (!isLastParagraphBulletOrHeading && earlierHasThinkingKeywords) {
+      const isLastParagraphThinking = /should\s+try|need\s+to|search\s+first|i\s+should/i.test(lastParagraph) && lastParagraph.length < 150;
+      if (!isLastParagraphThinking) {
+        return {
+          thinking: paragraphs.slice(0, -1).join('\n\n'),
+          response: lastParagraph
+        };
       }
     }
   }
@@ -117,6 +185,8 @@ export default function ChatArea() {
     setIsToonEnabled,
     isRememberEnabled,
     setIsRememberEnabled,
+    isWebSearchEnabled,
+    setIsWebSearchEnabled,
     activeModelDetails
   } = usePlayground();
 
@@ -407,7 +477,7 @@ const preprocessMarkdown = (text: string): string => {
                   <button
                     type="button"
                     onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                    className="model-select-dropdown bg-bg-sidebar border border-border-sidebar rounded-lg text-[11px] font-bold text-text-main px-2 py-1.5 outline-none flex items-center justify-between gap-1.5 w-[140px] sm:w-[190px] hover:border-primary-accent transition-all shrink-0 select-none cursor-pointer"
+                    className="model-select-dropdown bg-bg-sidebar border border-border-sidebar rounded-lg text-[11px] font-bold text-text-main px-2 py-1.5 outline-none flex items-center justify-between gap-1.5 w-[110px] sm:w-[190px] hover:border-primary-accent transition-all shrink-0 select-none cursor-pointer"
                   >
                     <span className="truncate">{activeModel}</span>
                     <ChevronDown size={11} className={`transform transition-transform shrink-0 text-text-muted ${isDropdownOpen ? 'rotate-180' : 'rotate-0'}`} />
@@ -443,10 +513,14 @@ const preprocessMarkdown = (text: string): string => {
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-          <div className={`status-badge px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-full text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 sm:gap-1.5 ${models.length > 0 ? 'bg-success-bg text-success-accent' : 'bg-red-500/10 text-red-400'
-            }`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${models.length > 0 ? 'bg-success-accent' : 'bg-red-400'}`} />
-            {models.length > 0 ? 'Connected' : 'Disconnected'}
+          <div 
+            className={`status-badge px-1.5 py-1 sm:px-2 sm:py-1 rounded-full text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 sm:gap-1.5 shrink-0 ${
+              models.length > 0 ? 'bg-success-bg text-success-accent' : 'bg-red-500/10 text-red-400'
+            }`}
+            title={models.length > 0 ? 'Connected' : 'Disconnected'}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${models.length > 0 ? 'bg-success-accent' : 'bg-red-400'}`} />
+            <span className="hidden sm:inline">{models.length > 0 ? 'Connected' : 'Disconnected'}</span>
           </div>
 
           {/* Clear Chat Button */}
@@ -498,9 +572,14 @@ const preprocessMarkdown = (text: string): string => {
             let responseContent = msg.text;
 
             if (isModel) {
-              const split = splitThinkingAndResponse(msg.text);
-              thinkingContent = split.thinking;
-              responseContent = split.response;
+              if (msg.thinking) {
+                thinkingContent = msg.thinking;
+                responseContent = msg.text;
+              } else {
+                const split = splitThinkingAndResponse(msg.text);
+                thinkingContent = split.thinking;
+                responseContent = split.response;
+              }
             }
 
             return (
@@ -532,6 +611,55 @@ const preprocessMarkdown = (text: string): string => {
                 )}
 
                 <div>{parseMessageText(responseContent, msg.role)}</div>
+
+                {/* Google Search Grounding Metadata Sources */}
+                {isModel && msg.groundingMetadata && (
+                  <div className="mt-3 pt-2 border-t border-border-sidebar/10 space-y-2 text-[11px] select-none">
+                    {msg.groundingMetadata.webSearchQueries && msg.groundingMetadata.webSearchQueries.length > 0 && (
+                      <div className="flex items-center gap-1.5 text-text-muted font-medium flex-wrap">
+                        <Globe size={11} className="text-primary-accent animate-pulse shrink-0" />
+                        <span className="shrink-0">Searched:</span>
+                        <div className="flex flex-wrap gap-1">
+                          {msg.groundingMetadata.webSearchQueries.map((query: string, qIdx: number) => (
+                            <span key={qIdx} className="bg-primary-accent-light/35 text-primary-accent px-1.5 py-0.5 rounded text-[10px] font-semibold border border-primary-accent/15 shrink-0">
+                              "{query}"
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {msg.groundingMetadata.groundingChunks && msg.groundingMetadata.groundingChunks.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="text-text-muted font-medium flex items-center gap-1.5">
+                          <Globe size={11} className="text-success-accent animate-pulse shrink-0" />
+                          <span>Sources:</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {msg.groundingMetadata.groundingChunks.map((chunk: any, cIdx: number) => {
+                            const webSource = chunk.web;
+                            if (!webSource) return null;
+                            return (
+                              <a
+                                key={cIdx}
+                                href={webSource.uri}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1.5 bg-bg-sidebar/55 hover:bg-bg-sidebar border border-border-sidebar hover:border-primary-accent px-2 py-1 rounded-lg text-text-main text-[10.5px] transition-all cursor-pointer shadow-sm hover:shadow shrink-0"
+                                title={webSource.title || webSource.uri}
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-success-accent animate-pulse shrink-0" />
+                                <span className="max-w-[150px] sm:max-w-[200px] truncate font-semibold text-text-main">
+                                  {webSource.title || webSource.uri}
+                                </span>
+                              </a>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
               {/* User message token details (Prompt info) & Copy option */}
               {msg.role === 'user' && (
@@ -714,20 +842,18 @@ const preprocessMarkdown = (text: string): string => {
                 <button
                   type="button"
                   onClick={() => setIsToonEnabled(!isToonEnabled)}
-                  className={`px-2 py-1 rounded-lg text-[9px] font-bold border transition-all cursor-pointer select-none uppercase tracking-wider shrink-0 font-mono ${
+                  className={`h-[26px] flex items-center justify-center gap-1.5 px-2.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer select-none uppercase tracking-wider shrink-0 font-mono ${
                     isToonEnabled 
                       ? 'bg-primary-accent border-primary-accent text-white shadow-sm font-semibold'
                       : 'bg-transparent border-border-input text-text-muted hover:text-text-main hover:border-primary-accent'
                   }`}
                 >
-                  <span className="flex items-center gap-1">
-                    <span className={`w-1.2 h-1.2 rounded-full transition-all ${isToonEnabled ? 'bg-white animate-pulse' : 'bg-text-muted/65'}`} />
-                    TOON
-                  </span>
+                  <span className={`w-1.5 h-1.5 rounded-full transition-all shrink-0 ${isToonEnabled ? 'bg-white animate-pulse' : 'bg-text-muted/65'}`} />
+                  TOON
                 </button>
                 
                 {/* TOON Hover Note Tooltip */}
-                <div className="absolute bottom-full left-1/2 -translate-x-[25px] mb-3 w-72 p-4 bg-bg-sidebar border border-border-sidebar rounded-xl shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-[100] text-left font-sans text-xs select-none">
+                <div className="hidden sm:block absolute bottom-full left-1/2 -translate-x-[25px] mb-3 w-72 p-4 bg-bg-sidebar border border-border-sidebar rounded-xl shadow-2xl opacity-0 pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto transition-all duration-200 z-[100] text-left font-sans text-xs select-none">
                   <div className="flex items-center gap-1.5 font-bold text-text-main mb-1.5 text-[10.5px] uppercase tracking-wider">
                     <Sparkles size={11} className="text-primary-accent animate-pulse" />
                     What is TOON Format?
@@ -756,20 +882,18 @@ const preprocessMarkdown = (text: string): string => {
                 <button
                   type="button"
                   onClick={() => setIsRememberEnabled(!isRememberEnabled)}
-                  className={`px-2 py-1 rounded-lg text-[9px] font-bold border transition-all cursor-pointer select-none uppercase tracking-wider shrink-0 font-mono flex items-center gap-1 ${
+                  className={`h-[26px] flex items-center justify-center gap-1.5 px-2.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer select-none uppercase tracking-wider shrink-0 font-mono ${
                     isRememberEnabled 
                       ? 'bg-success-accent border-success-accent text-white shadow-sm font-semibold'
                       : 'bg-transparent border-border-input text-text-muted hover:text-text-main hover:border-success-accent'
                   }`}
                 >
-                  <span className="flex items-center gap-1">
-                    <span className={`w-1.2 h-1.2 rounded-full transition-all ${isRememberEnabled ? 'bg-white animate-pulse' : 'bg-text-muted/65'}`} />
-                    Remember
-                  </span>
+                  <span className={`w-1.5 h-1.5 rounded-full transition-all shrink-0 ${isRememberEnabled ? 'bg-white animate-pulse' : 'bg-text-muted/65'}`} />
+                  Remember
                 </button>
                 
                 {/* Remember Hover Note Tooltip */}
-                <div className="absolute bottom-full left-1/2 -translate-x-[60px] mb-3 w-64 p-3.5 bg-bg-sidebar border border-border-sidebar rounded-xl shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-[100] text-left font-sans text-xs select-none">
+                <div className="hidden sm:block absolute bottom-full left-1/2 -translate-x-[60px] mb-3 w-64 p-3.5 bg-bg-sidebar border border-border-sidebar rounded-xl shadow-2xl opacity-0 pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto transition-all duration-200 z-[100] text-left font-sans text-xs select-none">
                   <div className="flex items-center gap-1.5 font-bold text-text-main mb-1.5 text-[10.5px] uppercase tracking-wider">
                     <History size={11} className="text-success-accent animate-pulse" />
                     Conversation Context
@@ -783,6 +907,40 @@ const preprocessMarkdown = (text: string): string => {
                   </div>
                   {/* Tooltip Arrow pointing down */}
                   <div className="absolute top-full left-[60px] w-2.5 h-2.5 bg-bg-sidebar border-r border-b border-border-sidebar rotate-45 -translate-y-[5px]" />
+                </div>
+              </div>
+
+              {/* Web Search Grounding Toggle */}
+              <div className="relative group shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsWebSearchEnabled(!isWebSearchEnabled)}
+                  className={`h-[26px] flex items-center justify-center gap-1.5 px-2.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer select-none uppercase tracking-wider shrink-0 font-mono ${
+                    isWebSearchEnabled 
+                      ? 'bg-primary-accent border-primary-accent text-white shadow-sm font-semibold'
+                      : 'bg-transparent border-border-input text-text-muted hover:text-text-main hover:border-primary-accent'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full transition-all shrink-0 ${isWebSearchEnabled ? 'bg-white animate-pulse' : 'bg-text-muted/65'}`} />
+                  <Globe size={10} className="shrink-0" />
+                  Web
+                </button>
+                
+                {/* Web Search Hover Note Tooltip */}
+                <div className="hidden sm:block absolute bottom-full left-1/2 -translate-x-[90px] mb-3 w-64 p-3.5 bg-bg-sidebar border border-border-sidebar rounded-xl shadow-2xl opacity-0 pointer-events-none sm:group-hover:opacity-100 sm:group-hover:pointer-events-auto transition-all duration-200 z-[100] text-left font-sans text-xs select-none">
+                  <div className="flex items-center gap-1.5 font-bold text-text-main mb-1.5 text-[10.5px] uppercase tracking-wider">
+                    <Globe size={11} className="text-primary-accent animate-pulse" />
+                    Google Search Grounding
+                  </div>
+                  <p className="text-text-muted text-[10.5px] leading-relaxed">
+                    When enabled, Gemini uses Google Search to answer queries with live, real-time web results. Ideal for news, scores, and real-time facts. Note: Supported models only.
+                  </p>
+                  <div className="mt-2.5 pt-2 border-t border-border-sidebar/40 flex items-center justify-between text-[9px]">
+                    <span className="text-text-muted font-medium">Status: <span className={isWebSearchEnabled ? 'text-primary-accent font-bold' : 'text-text-muted/80'}>{isWebSearchEnabled ? 'ON (Live Search)' : 'OFF (Static knowledge)'}</span></span>
+                    <span className="text-primary-accent font-semibold">Real-time Data</span>
+                  </div>
+                  {/* Tooltip Arrow pointing down */}
+                  <div className="absolute top-full left-[90px] w-2.5 h-2.5 bg-bg-sidebar border-r border-b border-border-sidebar rotate-45 -translate-y-[5px]" />
                 </div>
               </div>
             </div>

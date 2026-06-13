@@ -200,6 +200,34 @@ export default function ChatArea() {
   // Track expanded state of thinking accordion per message ID
   const [expandedThoughts, setExpandedThoughts] = useState<Record<string, boolean>>({});
 
+  const [chatCopied, setChatCopied] = useState(false);
+
+  const handleCopyChat = async () => {
+    if (messages.length === 0) return;
+    
+    let chatText = `# Gemini Playground Chat Export\n`;
+    chatText += `Export Date: ${new Date().toLocaleString()}\n`;
+    chatText += `Model: ${activeModel}\n\n`;
+    chatText += `==========================================\n\n`;
+
+    messages.forEach(msg => {
+      const roleName = msg.role === 'user' ? 'User' : `Gemini (${activeModel})`;
+      chatText += `### ${roleName}:\n${msg.text}\n\n`;
+      if (msg.thinking) {
+        chatText += `> **Thinking Process:**\n> ${msg.thinking.replace(/\n/g, '\n> ')}\n\n`;
+      }
+      chatText += `---\n\n`;
+    });
+
+    try {
+      await navigator.clipboard.writeText(chatText.trim());
+      setChatCopied(true);
+      setTimeout(() => setChatCopied(false), 2000);
+    } catch (err) {
+      console.warn('Failed to copy entire chat:', err);
+    }
+  };
+
   const toggleThought = (id: string) => {
     setExpandedThoughts(prev => ({ ...prev, [id]: !prev[id] }));
   };
@@ -530,10 +558,34 @@ const preprocessMarkdown = (text: string): string => {
             <button
               type="button"
               onClick={clearChat}
-              className="p-1.5 text-text-muted hover:text-red-400 rounded-md hover:bg-bg-card transition-all cursor-pointer"
+              className="p-1.5 text-text-muted hover:text-red-400 rounded-md hover:bg-bg-card transition-all cursor-pointer flex items-center justify-center"
               title="Clear Chat History"
             >
               <Trash2 size={16} />
+            </button>
+          )}
+
+          {/* Copy Entire Chat Button */}
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={handleCopyChat}
+              className="p-1.5 text-text-muted hover:text-text-main rounded-md hover:bg-bg-card transition-all cursor-pointer flex items-center justify-center"
+              title="Copy Entire Chat History"
+            >
+              {chatCopied ? <Check size={16} className="text-success-accent" /> : <Copy size={16} />}
+            </button>
+          )}
+
+          {/* Export PDF Button */}
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="p-1.5 text-text-muted hover:text-text-main rounded-md hover:bg-bg-card transition-all cursor-pointer flex items-center justify-center"
+              title="Export Chat as PDF / Print"
+            >
+              <FileText size={16} />
             </button>
           )}
 
@@ -568,174 +620,184 @@ const preprocessMarkdown = (text: string): string => {
             </p>
           </div>
         ) : (
-          messages.map(msg => {
-            const isModel = msg.role === 'model';
-            let thinkingContent: string | null = null;
-            let responseContent = msg.text;
+          <>
+            {/* Print Only Document Title Header */}
+            <div className="hidden print:block border-b-2 border-border-sidebar/40 pb-4 mb-6 select-none shrink-0">
+              <h1 className="text-xl font-bold text-text-main uppercase tracking-wider">Gemini Playground Chat Export</h1>
+              <p className="text-[10px] text-text-muted mt-1">
+                Model: {activeModel} | Export Date: {new Date().toLocaleString()}
+              </p>
+            </div>
+            
+            {messages.map(msg => {
+              const isModel = msg.role === 'model';
+              let thinkingContent: string | null = null;
+              let responseContent = msg.text;
 
-            if (isModel) {
-              if (msg.thinking) {
-                thinkingContent = msg.thinking;
-                responseContent = msg.text;
-              } else {
-                const split = splitThinkingAndResponse(msg.text);
-                thinkingContent = split.thinking;
-                responseContent = split.response;
+              if (isModel) {
+                if (msg.thinking) {
+                  thinkingContent = msg.thinking;
+                  responseContent = msg.text;
+                } else {
+                  const split = splitThinkingAndResponse(msg.text);
+                  thinkingContent = split.thinking;
+                  responseContent = split.response;
+                }
               }
-            }
 
-            return (
-              <div
-                key={msg.id}
-                className={`flex flex-col max-w-[85%] sm:max-w-[75%] p-4 rounded-2xl text-[13px] leading-relaxed relative ${msg.role === 'user'
-                  ? 'self-end bg-primary-accent text-white rounded-tr-none shadow-[0_4px_16px_var(--primary-accent-light)]'
-                  : 'self-start bg-bg-chat-ai border border-border-chat-ai text-text-main rounded-tl-none'
-                  }`}
-              >
-                {/* Collapsible Thinking/Reasoning block */}
-                {isModel && thinkingContent && (
-                  <div className="mb-3 border-l-2 border-primary-accent/40 pl-3 py-1 bg-bg-sidebar/30 dark:bg-bg-sidebar/20 rounded-r-lg text-xs shrink-0 select-none">
-                    <button
-                      type="button"
-                      onClick={() => toggleThought(msg.id)}
-                      className="flex items-center gap-1.5 font-semibold text-text-muted hover:text-primary-accent transition-colors cursor-pointer"
-                    >
-                      <Sparkles size={11} className="text-primary-accent animate-pulse" />
-                      <span>{expandedThoughts[msg.id] ? 'Hide thinking process' : 'Show thinking process'}</span>
-                      <ChevronDown size={11} className={`transform transition-transform ${expandedThoughts[msg.id] ? 'rotate-180' : ''}`} />
-                    </button>
-                    {expandedThoughts[msg.id] && (
-                      <div className="mt-2 text-[11px] text-text-muted leading-relaxed max-w-none">
-                        {parseMessageText(thinkingContent, 'model')}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div>{parseMessageText(responseContent, msg.role)}</div>
-
-                {/* Google Search Grounding Metadata Sources */}
-                {isModel && msg.groundingMetadata && (
-                  <div className="mt-3 pt-2 border-t border-border-sidebar/10 space-y-2 text-[11px] select-none">
-                    {msg.groundingMetadata.webSearchQueries && msg.groundingMetadata.webSearchQueries.length > 0 && (
-                      <div className="flex items-center gap-1.5 text-text-muted font-medium flex-wrap">
-                        <Globe size={11} className="text-primary-accent animate-pulse shrink-0" />
-                        <span className="shrink-0">Searched:</span>
-                        <div className="flex flex-wrap gap-1">
-                          {msg.groundingMetadata.webSearchQueries.map((query: string, qIdx: number) => (
-                            <span key={qIdx} className="bg-primary-accent-light/35 text-primary-accent px-1.5 py-0.5 rounded text-[10px] font-semibold border border-primary-accent/15 shrink-0">
-                              "{query}"
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    
-                    {msg.groundingMetadata.groundingChunks && msg.groundingMetadata.groundingChunks.length > 0 && (
-                      <div className="space-y-1">
-                        <div className="text-text-muted font-medium flex items-center gap-1.5">
-                          <Globe size={11} className="text-success-accent animate-pulse shrink-0" />
-                          <span>Sources:</span>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {msg.groundingMetadata.groundingChunks.map((chunk: any, cIdx: number) => {
-                            const webSource = chunk.web;
-                            if (!webSource) return null;
-                            return (
-                              <a
-                                key={cIdx}
-                                href={webSource.uri}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1.5 bg-bg-sidebar/55 hover:bg-bg-sidebar border border-border-sidebar hover:border-primary-accent px-2 py-1 rounded-lg text-text-main text-[10.5px] transition-all cursor-pointer shadow-sm hover:shadow shrink-0"
-                                title={webSource.title || webSource.uri}
-                              >
-                                <span className="w-1.5 h-1.5 rounded-full bg-success-accent animate-pulse shrink-0" />
-                                <span className="max-w-[150px] sm:max-w-[200px] truncate font-semibold text-text-main">
-                                  {webSource.title || webSource.uri}
-                                </span>
-                              </a>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-              {/* User message token details (Prompt info) & Copy option */}
-              {msg.role === 'user' && (
-                <div className="text-[9px] text-white/70 flex items-center justify-between mt-2.5 pt-1.5 border-t border-white/20 font-mono gap-4 animate-in fade-in slide-in-from-bottom-1 duration-200">
-                  <span className="truncate flex items-center gap-1.5">
-                    <span>
-                      {msg.tokens && msg.tokens.prompt > 0 
-                        ? `Input: ${msg.tokens.prompt.toLocaleString()} tokens` 
-                        : 'Prompt Input'
-                      }
-                      {msg.cost && ` | $${msg.cost.usd} (₹${msg.cost.inr})`}
-                    </span>
-                    {msg.isToonEnabled && (
-                      <span className="bg-white/25 text-white px-1 py-0.2 rounded text-[7.5px] font-bold tracking-wide uppercase select-none">TOON</span>
-                    )}
-                  </span>
-                  <CopyButton text={msg.text} isUser />
-                </div>
-              )}
-
-              {/* Model message token details (Response/Candidate info) & Copy option */}
-              {msg.role === 'model' && (
-                <div className="text-[9px] text-text-muted flex items-center justify-between mt-2.5 pt-1.5 border-t border-border-sidebar/20 font-mono gap-4">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <span>
-                      {msg.latency !== undefined && `took ${msg.latency.toFixed(2)}s`}
-                    </span>
-                    {msg.tokens && (
-                      <span className="flex items-center gap-1">
-                        <span>
-                          | {msg.tokens.prompt > 0 
-                            ? `P: ${msg.tokens.prompt.toLocaleString()} | R: ${msg.tokens.candidates.toLocaleString()}`
-                            : `Output: ${msg.tokens.candidates.toLocaleString()}`
-                          } tokens
-                        </span>
-                        {msg.isToonEnabled && (
-                          <span className="ml-1 bg-primary-accent/15 border border-primary-accent/25 text-primary-accent px-1.5 py-0.2 rounded text-[7.5px] font-bold tracking-wide uppercase select-none">TOON Input</span>
-                        )}
-                      </span>
-                    )}
-                    {msg.cost && (
-                      <span className="text-primary-accent font-semibold">
-                        | ${msg.cost.usd} (₹{msg.cost.inr})
-                      </span>
-                    )}
-                  </div>
-                  <CopyButton text={msg.text} />
-                </div>
-              )}
-
-              {msg.attachments && msg.attachments.length > 0 && (
-                <div className="flex gap-2 flex-wrap mt-3">
-                  {msg.attachments.map((att, idx) => (
-                    <div key={idx} className="flex flex-col">
-                      {att.dataUrl ? (
-                        <img
-                          src={att.dataUrl}
-                          alt={att.name}
-                          onClick={() => setPreviewImageUrl(att.dataUrl || null)}
-                          className="max-w-[120px] max-h-[120px] rounded-lg object-cover border border-border-sidebar mt-1 cursor-zoom-in hover:brightness-90 transition-all"
-                        />
-                      ) : (
-                        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-bg-input border border-border-input text-[10px] text-text-muted">
-                          <FileText size={10} />
-                          <span>{att.name}</span>
+              return (
+                <div
+                  key={msg.id}
+                  className={`flex flex-col max-w-[85%] sm:max-w-[75%] p-4 rounded-2xl text-[13px] leading-relaxed relative ${msg.role === 'user'
+                    ? 'self-end bg-primary-accent text-white rounded-tr-none shadow-[0_4px_16px_var(--primary-accent-light)]'
+                    : 'self-start bg-bg-chat-ai border border-border-chat-ai text-text-main rounded-tl-none'
+                    }`}
+                >
+                  {/* Collapsible Thinking/Reasoning block */}
+                  {isModel && thinkingContent && (
+                    <div className="mb-3 border-l-2 border-primary-accent/40 pl-3 py-1 bg-bg-sidebar/30 dark:bg-bg-sidebar/20 rounded-r-lg text-xs shrink-0 select-none">
+                      <button
+                        type="button"
+                        onClick={() => toggleThought(msg.id)}
+                        className="flex items-center gap-1.5 font-semibold text-text-muted hover:text-primary-accent transition-colors cursor-pointer"
+                      >
+                        <Sparkles size={11} className="text-primary-accent animate-pulse" />
+                        <span>{expandedThoughts[msg.id] ? 'Hide thinking process' : 'Show thinking process'}</span>
+                        <ChevronDown size={11} className={`transform transition-transform ${expandedThoughts[msg.id] ? 'rotate-180' : ''}`} />
+                      </button>
+                      {expandedThoughts[msg.id] && (
+                        <div className="mt-2 text-[11px] text-text-muted leading-relaxed max-w-none">
+                          {parseMessageText(thinkingContent, 'model')}
                         </div>
                       )}
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            );
-          })
+                  )}
+
+                  <div>{parseMessageText(responseContent, msg.role)}</div>
+
+                  {/* Google Search Grounding Metadata Sources */}
+                  {isModel && msg.groundingMetadata && (
+                    <div className="mt-3 pt-2 border-t border-border-sidebar/10 space-y-2 text-[11px] select-none">
+                      {msg.groundingMetadata.webSearchQueries && msg.groundingMetadata.webSearchQueries.length > 0 && (
+                        <div className="flex items-center gap-1.5 text-text-muted font-medium flex-wrap">
+                          <Globe size={11} className="text-primary-accent animate-pulse shrink-0" />
+                          <span className="shrink-0">Searched:</span>
+                          <div className="flex flex-wrap gap-1">
+                            {msg.groundingMetadata.webSearchQueries.map((query: string, qIdx: number) => (
+                              <span key={qIdx} className="bg-primary-accent-light/35 text-primary-accent px-1.5 py-0.5 rounded text-[10px] font-semibold border border-primary-accent/15 shrink-0">
+                                "{query}"
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {msg.groundingMetadata.groundingChunks && msg.groundingMetadata.groundingChunks.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="text-text-muted font-medium flex items-center gap-1.5">
+                            <Globe size={11} className="text-success-accent animate-pulse shrink-0" />
+                            <span>Sources:</span>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {msg.groundingMetadata.groundingChunks.map((chunk: any, cIdx: number) => {
+                              const webSource = chunk.web;
+                              if (!webSource) return null;
+                              return (
+                                <a
+                                  key={cIdx}
+                                  href={webSource.uri}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1.5 bg-bg-sidebar/55 hover:bg-bg-sidebar border border-border-sidebar hover:border-primary-accent px-2 py-1 rounded-lg text-text-main text-[10.5px] transition-all cursor-pointer shadow-sm hover:shadow shrink-0"
+                                  title={webSource.title || webSource.uri}
+                                >
+                                  <span className="w-1.5 h-1.5 rounded-full bg-success-accent animate-pulse shrink-0" />
+                                  <span className="max-w-[150px] sm:max-w-[200px] truncate font-semibold text-text-main">
+                                    {webSource.title || webSource.uri}
+                                  </span>
+                                </a>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                {/* User message token details (Prompt info) & Copy option */}
+                {msg.role === 'user' && (
+                  <div className="text-[9px] text-white/70 flex items-center justify-between mt-2.5 pt-1.5 border-t border-white/20 font-mono gap-4 animate-in fade-in slide-in-from-bottom-1 duration-200">
+                    <span className="truncate flex items-center gap-1.5">
+                      <span>
+                        {msg.tokens && msg.tokens.prompt > 0 
+                          ? `Input: ${msg.tokens.prompt.toLocaleString()} tokens` 
+                          : 'Prompt Input'
+                        }
+                        {msg.cost && ` | $${msg.cost.usd} (₹${msg.cost.inr})`}
+                      </span>
+                      {msg.isToonEnabled && (
+                        <span className="bg-white/25 text-white px-1 py-0.2 rounded text-[7.5px] font-bold tracking-wide uppercase select-none">TOON</span>
+                      )}
+                    </span>
+                    <CopyButton text={msg.text} isUser />
+                  </div>
+                )}
+
+                {/* Model message token details (Response/Candidate info) & Copy option */}
+                {msg.role === 'model' && (
+                  <div className="text-[9px] text-text-muted flex items-center justify-between mt-2.5 pt-1.5 border-t border-border-sidebar/20 font-mono gap-4">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span>
+                        {msg.latency !== undefined && `took ${msg.latency.toFixed(2)}s`}
+                      </span>
+                      {msg.tokens && (
+                        <span className="flex items-center gap-1">
+                          <span>
+                            | {msg.tokens.prompt > 0 
+                              ? `P: ${msg.tokens.prompt.toLocaleString()} | R: ${msg.tokens.candidates.toLocaleString()}`
+                              : `Output: ${msg.tokens.candidates.toLocaleString()}`
+                            } tokens
+                          </span>
+                          {msg.isToonEnabled && (
+                            <span className="ml-1 bg-primary-accent/15 border border-primary-accent/25 text-primary-accent px-1.5 py-0.2 rounded text-[7.5px] font-bold tracking-wide uppercase select-none">TOON Input</span>
+                          )}
+                        </span>
+                      )}
+                      {msg.cost && (
+                        <span className="text-primary-accent font-semibold">
+                          | ${msg.cost.usd} (₹{msg.cost.inr})
+                        </span>
+                      )}
+                    </div>
+                    <CopyButton text={msg.text} />
+                  </div>
+                )}
+
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <div className="flex gap-2 flex-wrap mt-3">
+                    {msg.attachments.map((att, idx) => (
+                      <div key={idx} className="flex flex-col">
+                        {att.dataUrl ? (
+                          <img
+                            src={att.dataUrl}
+                            alt={att.name}
+                            onClick={() => setPreviewImageUrl(att.dataUrl || null)}
+                            className="max-w-[120px] max-h-[120px] rounded-lg object-cover border border-border-sidebar mt-1 cursor-zoom-in hover:brightness-90 transition-all"
+                          />
+                        ) : (
+                          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-bg-input border border-border-input text-[10px] text-text-muted">
+                            <FileText size={10} />
+                            <span>{att.name}</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              );
+            })}
+          </>
         )}
         {isSending && (
           <div className="self-start flex items-center gap-2.5 bg-bg-card border border-border-card px-4 py-3 rounded-2xl rounded-tl-none text-[13px] text-text-muted">

@@ -282,6 +282,19 @@ textarea::-webkit-scrollbar {
     font-size: 11pt !important;
   }
 
+  /* Target any layout wrappers restricting height or scroll */
+  body > div,
+  .h-screen,
+  .overflow-hidden,
+  #root,
+  #__next {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+    position: static !important;
+  }
+
   main {
     border: none !important;
     background: transparent !important;

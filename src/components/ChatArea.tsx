@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Send, Image as ImageIcon, FileText, Loader2, Sparkles, Trash2, Menu, Info, Sun, Moon, ChevronDown, Square, Copy, Check, History, Globe
+  Send, Image as ImageIcon, FileText, Loader2, Sparkles, Trash2, Menu, Info, Sun, Moon, ChevronDown, Square, Copy, Check, History, Globe, Download
 } from 'lucide-react';
 import { marked } from 'marked';
 import { usePlayground, Attachment } from '../context/PlaygroundContext';
@@ -590,7 +590,7 @@ const preprocessMarkdown = (text: string): string => {
               className="p-1.5 text-text-muted hover:text-text-main rounded-md hover:bg-bg-card transition-all cursor-pointer flex items-center justify-center"
               title="Export Chat as PDF / Print"
             >
-              <FileText size={16} />
+              <Download size={16} />
             </button>
           )}
 

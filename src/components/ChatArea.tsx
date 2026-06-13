@@ -41,6 +41,64 @@ const CopyButton = ({ text, isUser = false }: { text: string; isUser?: boolean }
   );
 };
 
+// Helper function to extract thinking process and actual response from model text
+const splitThinkingAndResponse = (text: string): { thinking: string | null; response: string } => {
+  if (!text) return { thinking: null, response: '' };
+
+  // 1. Standard <think> tags (DeepSeek R1 style)
+  if (text.includes('<think>')) {
+    const parts = text.split('</think>');
+    const thinkingPart = parts[0].replace('<think>', '').trim();
+    const responsePart = parts.slice(1).join('</think>').trim();
+    return {
+      thinking: thinkingPart || null,
+      response: responsePart || text
+    };
+  }
+
+  // 2. "Drafting the response:" style (Gemini system prompt style)
+  const draftingRegex = /([\s\S]*?)(?:Drafting\s+(?:the\s+)?response:\s*)"([\s\S]*?)"\s*$/i;
+  const matchDrafting = text.match(draftingRegex);
+  if (matchDrafting) {
+    return {
+      thinking: matchDrafting[1].trim() || null,
+      response: matchDrafting[2].trim()
+    };
+  }
+
+  // Alternate drafting match without quotes
+  const draftingNoQuotesRegex = /([\s\S]*?)(?:Drafting\s+(?:the\s+)?response:\s*)([\s\S]*?)$/i;
+  const matchDraftingNoQuotes = text.match(draftingNoQuotesRegex);
+  if (matchDraftingNoQuotes) {
+    const responseCandidate = matchDraftingNoQuotes[2].trim();
+    if (responseCandidate.length > 0 && !responseCandidate.includes('\n\n')) {
+      return {
+        thinking: matchDraftingNoQuotes[1].trim() || null,
+        response: responseCandidate
+      };
+    }
+  }
+
+  // 3. Last paragraph in quotes style (e.g., "Okay!...")
+  const paragraphs = text.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  if (paragraphs.length > 1) {
+    const lastParagraph = paragraphs[paragraphs.length - 1];
+    if (lastParagraph.startsWith('"') && lastParagraph.endsWith('"') && lastParagraph.length > 2) {
+      const hasThinkingKeywords = paragraphs.slice(0, -1).some(p => 
+        /user\s+(said|asked|responded)|draft|correction|goal|interpret|should:|thinking|acknowledge/i.test(p) ||
+        p.startsWith('*') || p.startsWith('-') || /^\d+\./.test(p)
+      );
+      if (hasThinkingKeywords) {
+        const thinking = paragraphs.slice(0, -1).join('\n\n');
+        const response = lastParagraph.slice(1, -1).trim();
+        return { thinking, response };
+      }
+    }
+  }
+
+  return { thinking: null, response: text };
+};
+
 export default function ChatArea() {
   const {
     activeModel,
@@ -68,6 +126,13 @@ export default function ChatArea() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  
+  // Track expanded state of thinking accordion per message ID
+  const [expandedThoughts, setExpandedThoughts] = useState<Record<string, boolean>>({});
+
+  const toggleThought = (id: string) => {
+    setExpandedThoughts(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // Local React DOM Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -427,15 +492,46 @@ const preprocessMarkdown = (text: string): string => {
             </p>
           </div>
         ) : (
-          messages.map(msg => (
-            <div
-              key={msg.id}
-              className={`flex flex-col max-w-[85%] sm:max-w-[75%] p-4 rounded-2xl text-[13px] leading-relaxed relative ${msg.role === 'user'
-                ? 'self-end bg-primary-accent text-white rounded-tr-none shadow-[0_4px_16px_var(--primary-accent-light)]'
-                : 'self-start bg-bg-chat-ai border border-border-chat-ai text-text-main rounded-tl-none'
-                }`}
-            >
-              <div>{parseMessageText(msg.text, msg.role)}</div>
+          messages.map(msg => {
+            const isModel = msg.role === 'model';
+            let thinkingContent: string | null = null;
+            let responseContent = msg.text;
+
+            if (isModel) {
+              const split = splitThinkingAndResponse(msg.text);
+              thinkingContent = split.thinking;
+              responseContent = split.response;
+            }
+
+            return (
+              <div
+                key={msg.id}
+                className={`flex flex-col max-w-[85%] sm:max-w-[75%] p-4 rounded-2xl text-[13px] leading-relaxed relative ${msg.role === 'user'
+                  ? 'self-end bg-primary-accent text-white rounded-tr-none shadow-[0_4px_16px_var(--primary-accent-light)]'
+                  : 'self-start bg-bg-chat-ai border border-border-chat-ai text-text-main rounded-tl-none'
+                  }`}
+              >
+                {/* Collapsible Thinking/Reasoning block */}
+                {isModel && thinkingContent && (
+                  <div className="mb-3 border-l-2 border-primary-accent/40 pl-3 py-1 bg-bg-sidebar/30 dark:bg-bg-sidebar/20 rounded-r-lg text-xs shrink-0 select-none">
+                    <button
+                      type="button"
+                      onClick={() => toggleThought(msg.id)}
+                      className="flex items-center gap-1.5 font-semibold text-text-muted hover:text-primary-accent transition-colors cursor-pointer"
+                    >
+                      <Sparkles size={11} className="text-primary-accent animate-pulse" />
+                      <span>{expandedThoughts[msg.id] ? 'Hide thinking process' : 'Show thinking process'}</span>
+                      <ChevronDown size={11} className={`transform transition-transform ${expandedThoughts[msg.id] ? 'rotate-180' : ''}`} />
+                    </button>
+                    {expandedThoughts[msg.id] && (
+                      <div className="mt-2 text-[11px] text-text-muted leading-relaxed max-w-none">
+                        {parseMessageText(thinkingContent, 'model')}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div>{parseMessageText(responseContent, msg.role)}</div>
 
               {/* User message token details (Prompt info) & Copy option */}
               {msg.role === 'user' && (
@@ -508,7 +604,8 @@ const preprocessMarkdown = (text: string): string => {
                 </div>
               )}
             </div>
-          ))
+            );
+          })
         )}
         {isSending && (
           <div className="self-start flex items-center gap-2.5 bg-bg-card border border-border-card px-4 py-3 rounded-2xl rounded-tl-none text-[13px] text-text-muted">
@@ -553,7 +650,7 @@ const preprocessMarkdown = (text: string): string => {
           </div>
         )}
 
-        <form onSubmit={onSubmit} className="flex gap-3 bg-bg-input border border-border-input rounded-xl p-2 items-center focus-within:border-primary-accent transition-all min-w-0 w-full">
+        <form onSubmit={onSubmit} className="flex flex-col gap-2.5 bg-bg-input border border-border-input rounded-xl p-3 focus-within:border-primary-accent transition-all min-w-0 w-full">
           <input
             type="file"
             aria-label="Attach Images"
@@ -572,132 +669,146 @@ const preprocessMarkdown = (text: string): string => {
             onChange={handleDocUpload}
           />
 
-          <button
-            type="button"
-            className="p-2 text-text-muted hover:text-text-main rounded-lg hover:bg-bg-card transition-all shrink-0 cursor-pointer"
-            onClick={() => imageInputRef.current?.click()}
-            title="Attach Images"
-          >
-            <ImageIcon size={16} />
-          </button>
-          <button
-            type="button"
-            className="p-2 text-text-muted hover:text-text-main rounded-lg hover:bg-bg-card transition-all shrink-0 cursor-pointer"
-            onClick={() => docInputRef.current?.click()}
-            title="Attach Documents"
-          >
-            <FileText size={16} />
-          </button>
-
-          {/* TOON Compression Toggle with Rich Tooltip Note */}
-          <div className="relative group shrink-0">
-            <button
-              type="button"
-              onClick={() => setIsToonEnabled(!isToonEnabled)}
-              className={`px-2 py-1.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer select-none uppercase tracking-wider shrink-0 font-mono ${
-                isToonEnabled 
-                  ? 'bg-primary-accent border-primary-accent text-white shadow-sm font-semibold'
-                  : 'bg-transparent border-border-input text-text-muted hover:text-text-main hover:border-primary-accent'
-              }`}
-            >
-              <span className="flex items-center gap-1">
-                <span className={`w-1.5 h-1.5 rounded-full transition-all ${isToonEnabled ? 'bg-white animate-pulse' : 'bg-text-muted/65'}`} />
-                TOON
-              </span>
-            </button>
-            
-            {/* TOON Hover Note Tooltip */}
-            <div className="absolute bottom-full left-1/2 -translate-x-[25px] mb-3 w-72 p-4 bg-bg-sidebar border border-border-sidebar rounded-xl shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-[100] text-left font-sans text-xs select-none">
-              <div className="flex items-center gap-1.5 font-bold text-text-main mb-1.5 text-[10.5px] uppercase tracking-wider">
-                <Sparkles size={11} className="text-primary-accent animate-pulse" />
-                What is TOON Format?
-              </div>
-              <p className="text-text-muted text-[10.5px] leading-relaxed mb-2.5">
-                TOON is an optimized serialization format. It compresses flat/tabular JSON structures and instructs Gemini to write responses in TOON, saving <strong>30%–50%</strong> of tokens. Note: Teaching the model TOON requires a static system instruction overhead of <strong>~97 tokens</strong>.
-              </p>
-
-              <div className="bg-bg-input/40 border border-border-input/30 rounded-lg p-2.5 mb-2.5 text-[10px] space-y-1 text-text-muted">
-                <div className="font-semibold text-text-main text-[10.5px] mb-0.5">💡 Usage Guide:</div>
-                <div>✔️ <strong className="text-primary-accent">ON:</strong> For <strong>flat (flattened) JSON</strong>, tabular data, table prompts, or list generation where savings far exceed the ~97 token overhead.</div>
-                <div>❌ <strong className="text-text-main">OFF:</strong> For <strong>deeply nested JSON</strong> objects (which degrade TOON efficiency and consume more tokens) or simple plain text queries.</div>
-              </div>
-
-              <div className="pt-2.5 border-t border-border-sidebar/40 flex items-center justify-between text-[9px]">
-                <span className="text-text-muted font-medium">Status: <span className={isToonEnabled ? 'text-success-accent font-bold' : 'text-text-muted/80'}>{isToonEnabled ? 'ACTIVE (ON)' : 'INACTIVE (OFF)'}</span></span>
-                <span className="text-primary-accent font-semibold">Saves Token Quotas</span>
-              </div>
-              {/* Tooltip Arrow pointing down */}
-              <div className="absolute top-full left-[21px] w-2.5 h-2.5 bg-bg-sidebar border-r border-b border-border-sidebar rotate-45 -translate-y-[5px]" />
-            </div>
+          {/* Textarea Input field spanning full width on its own row */}
+          <div className="flex-1 min-w-0 w-full">
+            <textarea
+              placeholder="Ask Gemini anything..."
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  onSubmit(e);
+                }
+              }}
+              onPaste={handlePaste}
+              className="w-full bg-transparent border-none outline-none resize-none text-[13px] text-text-main py-1 min-h-[40px] max-h-40 font-sans placeholder-gray-600 no-scrollbar"
+            />
           </div>
 
-          {/* Remember Conversation Context Toggle */}
-          <div className="relative group shrink-0">
-            <button
-              type="button"
-              onClick={() => setIsRememberEnabled(!isRememberEnabled)}
-              className={`px-2 py-1.5 rounded-lg text-[9px] font-bold border transition-all cursor-pointer select-none uppercase tracking-wider shrink-0 font-mono flex items-center gap-1 ${
-                isRememberEnabled 
-                  ? 'bg-success-accent border-success-accent text-white shadow-sm font-semibold'
-                  : 'bg-transparent border-border-input text-text-muted hover:text-text-main hover:border-success-accent'
-              }`}
-            >
-              <span className="flex items-center gap-1">
-                <span className={`w-1.5 h-1.5 rounded-full transition-all ${isRememberEnabled ? 'bg-white animate-pulse' : 'bg-text-muted/65'}`} />
-                Remember
-              </span>
-            </button>
-            
-            {/* Remember Hover Note Tooltip */}
-            <div className="absolute bottom-full left-1/2 -translate-x-[60px] mb-3 w-64 p-3.5 bg-bg-sidebar border border-border-sidebar rounded-xl shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-[100] text-left font-sans text-xs select-none">
-              <div className="flex items-center gap-1.5 font-bold text-text-main mb-1.5 text-[10.5px] uppercase tracking-wider">
-                <History size={11} className="text-success-accent animate-pulse" />
-                Conversation Context
+          {/* Action Toolbar Row */}
+          <div className="flex items-center justify-between gap-2 pt-2 border-t border-border-sidebar/10 shrink-0">
+            {/* Left Actions: Attachments & Toggles */}
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0">
+              <button
+                type="button"
+                className="p-1.5 text-text-muted hover:text-text-main rounded-lg hover:bg-bg-card transition-all shrink-0 cursor-pointer"
+                onClick={() => imageInputRef.current?.click()}
+                title="Attach Images"
+              >
+                <ImageIcon size={15} />
+              </button>
+              <button
+                type="button"
+                className="p-1.5 text-text-muted hover:text-text-main rounded-lg hover:bg-bg-card transition-all shrink-0 cursor-pointer"
+                onClick={() => docInputRef.current?.click()}
+                title="Attach Documents"
+              >
+                <FileText size={15} />
+              </button>
+
+              <div className="h-4 w-[1px] bg-border-sidebar/30 mx-0.5 shrink-0" />
+
+              {/* TOON Compression Toggle with Rich Tooltip Note */}
+              <div className="relative group shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsToonEnabled(!isToonEnabled)}
+                  className={`px-2 py-1 rounded-lg text-[9px] font-bold border transition-all cursor-pointer select-none uppercase tracking-wider shrink-0 font-mono ${
+                    isToonEnabled 
+                      ? 'bg-primary-accent border-primary-accent text-white shadow-sm font-semibold'
+                      : 'bg-transparent border-border-input text-text-muted hover:text-text-main hover:border-primary-accent'
+                  }`}
+                >
+                  <span className="flex items-center gap-1">
+                    <span className={`w-1.2 h-1.2 rounded-full transition-all ${isToonEnabled ? 'bg-white animate-pulse' : 'bg-text-muted/65'}`} />
+                    TOON
+                  </span>
+                </button>
+                
+                {/* TOON Hover Note Tooltip */}
+                <div className="absolute bottom-full left-1/2 -translate-x-[25px] mb-3 w-72 p-4 bg-bg-sidebar border border-border-sidebar rounded-xl shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-[100] text-left font-sans text-xs select-none">
+                  <div className="flex items-center gap-1.5 font-bold text-text-main mb-1.5 text-[10.5px] uppercase tracking-wider">
+                    <Sparkles size={11} className="text-primary-accent animate-pulse" />
+                    What is TOON Format?
+                  </div>
+                  <p className="text-text-muted text-[10.5px] leading-relaxed mb-2.5">
+                    TOON is an optimized serialization format. It compresses flat/tabular JSON structures and instructs Gemini to write responses in TOON, saving <strong>30%–50%</strong> of tokens. Note: Teaching the model TOON requires a static system instruction overhead of <strong>~97 tokens</strong>.
+                  </p>
+
+                  <div className="bg-bg-input/40 border border-border-input/30 rounded-lg p-2.5 mb-2.5 text-[10px] space-y-1 text-text-muted">
+                    <div className="font-semibold text-text-main text-[10.5px] mb-0.5">💡 Usage Guide:</div>
+                    <div>✔️ <strong className="text-primary-accent">ON:</strong> For <strong>flat (flattened) JSON</strong>, tabular data, table prompts, or list generation where savings far exceed the ~97 token overhead.</div>
+                    <div>❌ <strong className="text-text-main">OFF:</strong> For <strong>deeply nested JSON</strong> objects (which degrade TOON efficiency and consume more tokens) or simple plain text queries.</div>
+                  </div>
+
+                  <div className="pt-2.5 border-t border-border-sidebar/40 flex items-center justify-between text-[9px]">
+                    <span className="text-text-muted font-medium">Status: <span className={isToonEnabled ? 'text-success-accent font-bold' : 'text-text-muted/80'}>{isToonEnabled ? 'ACTIVE (ON)' : 'INACTIVE (OFF)'}</span></span>
+                    <span className="text-primary-accent font-semibold">Saves Token Quotas</span>
+                  </div>
+                  {/* Tooltip Arrow pointing down */}
+                  <div className="absolute top-full left-[21px] w-2.5 h-2.5 bg-bg-sidebar border-r border-b border-border-sidebar rotate-45 -translate-y-[5px]" />
+                </div>
               </div>
-              <p className="text-text-muted text-[10.5px] leading-relaxed">
-                When enabled, Gemini remembers the previous chat history to keep context. When disabled, the history is ignored and each message is sent as a clean, single-turn request.
-              </p>
-              <div className="mt-2.5 pt-2 border-t border-border-sidebar/40 flex items-center justify-between text-[9px]">
-                <span className="text-text-muted font-medium">Status: <span className={isRememberEnabled ? 'text-success-accent font-bold' : 'text-text-muted/80'}>{isRememberEnabled ? 'ON (Send Context)' : 'OFF (Single Turn)'}</span></span>
-                <span className="text-success-accent font-semibold">Contextual Chat</span>
+
+              {/* Remember Conversation Context Toggle */}
+              <div className="relative group shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsRememberEnabled(!isRememberEnabled)}
+                  className={`px-2 py-1 rounded-lg text-[9px] font-bold border transition-all cursor-pointer select-none uppercase tracking-wider shrink-0 font-mono flex items-center gap-1 ${
+                    isRememberEnabled 
+                      ? 'bg-success-accent border-success-accent text-white shadow-sm font-semibold'
+                      : 'bg-transparent border-border-input text-text-muted hover:text-text-main hover:border-success-accent'
+                  }`}
+                >
+                  <span className="flex items-center gap-1">
+                    <span className={`w-1.2 h-1.2 rounded-full transition-all ${isRememberEnabled ? 'bg-white animate-pulse' : 'bg-text-muted/65'}`} />
+                    Remember
+                  </span>
+                </button>
+                
+                {/* Remember Hover Note Tooltip */}
+                <div className="absolute bottom-full left-1/2 -translate-x-[60px] mb-3 w-64 p-3.5 bg-bg-sidebar border border-border-sidebar rounded-xl shadow-2xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all duration-200 z-[100] text-left font-sans text-xs select-none">
+                  <div className="flex items-center gap-1.5 font-bold text-text-main mb-1.5 text-[10.5px] uppercase tracking-wider">
+                    <History size={11} className="text-success-accent animate-pulse" />
+                    Conversation Context
+                  </div>
+                  <p className="text-text-muted text-[10.5px] leading-relaxed">
+                    When enabled, Gemini remembers the previous chat history to keep context. When disabled, the history is ignored and each message is sent as a clean, single-turn request.
+                  </p>
+                  <div className="mt-2.5 pt-2 border-t border-border-sidebar/40 flex items-center justify-between text-[9px]">
+                    <span className="text-text-muted font-medium">Status: <span className={isRememberEnabled ? 'text-success-accent font-bold' : 'text-text-muted/80'}>{isRememberEnabled ? 'ON (Send Context)' : 'OFF (Single Turn)'}</span></span>
+                    <span className="text-success-accent font-semibold">Contextual Chat</span>
+                  </div>
+                  {/* Tooltip Arrow pointing down */}
+                  <div className="absolute top-full left-[60px] w-2.5 h-2.5 bg-bg-sidebar border-r border-b border-border-sidebar rotate-45 -translate-y-[5px]" />
+                </div>
               </div>
-              {/* Tooltip Arrow pointing down */}
-              <div className="absolute top-full left-[60px] w-2.5 h-2.5 bg-bg-sidebar border-r border-b border-border-sidebar rotate-45 -translate-y-[5px]" />
+            </div>
+
+            {/* Right Action: Send/Stop Button */}
+            <div className="shrink-0">
+              {isSending ? (
+                <button
+                  type="button"
+                  onClick={stopGeneration}
+                  className="p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-all shrink-0 cursor-pointer flex items-center justify-center animate-pulse"
+                  title="Stop Generation"
+                >
+                  <Square size={12} fill="white" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  className="p-2 bg-primary-accent text-white rounded-lg hover:bg-primary-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0 cursor-pointer flex items-center justify-center"
+                  disabled={!inputText.trim() && attachments.length === 0}
+                >
+                  <Send size={12} />
+                </button>
+              )}
             </div>
           </div>
-
-          <textarea
-            placeholder="Ask Gemini anything..."
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                onSubmit(e);
-              }
-            }}
-            onPaste={handlePaste}
-            className="flex-1 bg-transparent border-none outline-none resize-none text-[13px] text-text-main py-1 max-h-24 h-6 font-sans placeholder-gray-600 no-scrollbar min-w-0"
-          />
-
-          {isSending ? (
-            <button
-              type="button"
-              onClick={stopGeneration}
-              className="p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-all shrink-0 cursor-pointer flex items-center justify-center animate-pulse"
-              title="Stop Generation"
-            >
-              <Square size={12} fill="white" />
-            </button>
-          ) : (
-            <button
-              type="submit"
-              className="p-2 bg-primary-accent text-white rounded-lg hover:bg-primary-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-all shrink-0 cursor-pointer"
-              disabled={!inputText.trim() && attachments.length === 0}
-            >
-              <Send size={12} />
-            </button>
-          )}
         </form>
       </div>
       {/* Full-screen Image Preview Modal */}
